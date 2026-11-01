@@ -366,6 +366,7 @@ async function viewDashboard(view) {
   }
 
   view.innerHTML = head('Tableau de bord', `Vue d'ensemble de votre club${season ? ' · saison ' + esc(season.label) : ''}`) + `
+    ${isAdmin() && (!lastBackup() || Date.now() - new Date(lastBackup()) > 31 * 86400000) ? `<div class="alert info">Pensez à télécharger une sauvegarde de vos données : <a href="#/parametres">Paramètres → Sauvegarde</a>.</div>` : ''}
     ${!season && isAdmin() ? `<div class="alert info">Aucune saison active. <a href="#/parametres">Créez la saison en cours dans les Paramètres</a> pour suivre la comptabilité par saison.</div>` : ''}
     <div class="grid stats mb">
       <div class="card stat"><div class="label">Membres actifs</div><div class="value">${active.length}</div><div class="hint">${members.length} inscrits au total</div></div>
@@ -750,7 +751,15 @@ async function viewSettings(view) {
             <option value="enseignant" ${p.role === 'enseignant' ? 'selected' : ''}>Enseignant</option>
             <option value="admin" ${p.role === 'admin' ? 'selected' : ''}>Administrateur</option></select>`}</div>`).join('')}
       </div>
+
+      <div class="card card-pad">
+        <h2>Sauvegarde</h2>
+        <p class="small muted">Téléchargez un fichier Excel contenant toutes les données du club : membres, paiements, dépenses, séances, présences, planification et paramètres. Conseillé une fois par mois, à garder en lieu sûr (il contient des données personnelles et médicales).</p>
+        <div class="small mb">${lastBackupText()}</div>
+        <button class="btn btn-primary" id="backup">${icon('file')}Télécharger une sauvegarde</button>
+      </div>
     </div>`;
+  $('#backup').onclick = () => downloadBackup($('#backup'));
 
   const save = async (data, msg = 'Paramètres enregistrés') => {
     const { error } = await sb.from('club_settings').update(data).eq('id', 1);
@@ -1089,6 +1098,57 @@ function courseForm(c, defaults = {}) {
       } catch (e) { fail(e); btn.disabled = false; }
     },
   });
+}
+
+/* =====================================================================
+   Sauvegarde Excel
+   ===================================================================== */
+const BACKUP_KEY = 'defendr-derniere-sauvegarde';
+const lastBackup = () => { try { return localStorage.getItem(BACKUP_KEY); } catch { return null; } };
+function lastBackupText() {
+  const d = lastBackup();
+  if (!d) return '<span class="badge warn">Aucune sauvegarde téléchargée depuis cet appareil</span>';
+  const days = Math.floor((Date.now() - new Date(d)) / 86400000);
+  return `<span class="badge ${days > 31 ? 'warn' : 'ok'}">Dernière sauvegarde : ${fmtDate(d.slice(0, 10))}${days > 31 ? ' · il est temps d’en refaire une' : ''}</span>`;
+}
+
+async function downloadBackup(btn) {
+  btn.disabled = true; const label = btn.innerHTML; btn.textContent = 'Préparation…';
+  try {
+    const XLSX = await import('https://cdn.jsdelivr.net/npm/xlsx@0.18.5/+esm');
+    const all = async (table, order) => { const { data, error } = await sb.from(table).select('*').order(order); if (error) throw error; return data; };
+    const [members, payments, expenses, courses, attendances, plan, disciplines, levels, seasons, settings] = await Promise.all([
+      all('members', 'last_name'), all('payments', 'payment_date'), all('expenses', 'expense_date'), all('courses', 'course_date'),
+      all('attendances', 'course_id'), all('plan_items', 'month'), all('disciplines', 'name'), all('levels', 'rank'), all('seasons', 'created_at'), all('club_settings', 'id'),
+    ]);
+    const nameOf = id => { const m = members.find(x => x.id === id); return m ? fullName(m) : ''; };
+    const courseOf = id => courses.find(c => c.id === id);
+    const seasonOf = id => seasons.find(s => s.id === id)?.label || '';
+    const yn = v => v === true ? 'Oui' : v === false ? 'Non' : v;
+    const clean = rows => rows.map(r => Object.fromEntries(Object.entries(r).filter(([k]) => k !== 'legacy').map(([k, v]) => [k, Array.isArray(v) ? v.join(' | ') : yn(v)])));
+    const sheets = {
+      'Membres': clean(members.map(m => ({ ...m, discipline: discName(m.discipline_id), niveau: levelName(m.level_id) }))),
+      'Paiements': clean(payments.map(p => ({ membre: nameOf(p.member_id), saison: seasonOf(p.season_id), ...p }))),
+      'Dépenses': clean(expenses.map(e => ({ saison: seasonOf(e.season_id), ...e }))),
+      'Séances': clean(courses.map(c => ({ saison: seasonOf(c.season_id), ...c, presents: attendances.filter(a => a.course_id === c.id && a.present).length }))),
+      'Présences': clean(attendances.map(a => ({ date: courseOf(a.course_id)?.course_date || '', seance: courseOf(a.course_id)?.title || '', membre: nameOf(a.member_id), ...a }))),
+      'Planification': clean(plan.map(p => ({ saison: seasonOf(p.season_id), mois: MONTHS[p.month - 1], ...p }))),
+      'Disciplines': clean(disciplines), 'Niveaux': clean(levels), 'Saisons': clean(seasons), 'Paramètres': clean(settings),
+    };
+    const wb = XLSX.utils.book_new();
+    for (const [name, rows] of Object.entries(sheets)) {
+      const ws = XLSX.utils.json_to_sheet(rows.length ? rows : [{ info: 'Aucune donnée' }]);
+      const keys = Object.keys(rows[0] || { info: '' });
+      ws['!cols'] = keys.map(k => ({ wch: Math.min(40, Math.max(k.length, ...rows.slice(0, 50).map(r => String(r[k] ?? '').length)) + 2) }));
+      XLSX.utils.book_append_sheet(wb, ws, name);
+    }
+    const stamp = isoDay(new Date());
+    XLSX.writeFile(wb, `Defendr-sauvegarde-${stamp}.xlsx`);
+    try { localStorage.setItem(BACKUP_KEY, new Date().toISOString()); } catch {}
+    toast('Sauvegarde téléchargée');
+    const info = btn.previousElementSibling; if (info) info.innerHTML = lastBackupText();
+  } catch (e) { fail(e); }
+  finally { btn.disabled = false; btn.innerHTML = label; }
 }
 
 /* =====================================================================
