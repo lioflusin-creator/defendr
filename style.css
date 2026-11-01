@@ -349,3 +349,20 @@ table.table { width: 100%; border-collapse: collapse; font-size: 14px; }
 .modal-body .row svg { width: 16px; height: 16px; flex-shrink: 0; }
 .dl-date { text-transform: none; }
 .dl-date::first-letter { text-transform: uppercase; }
+
+/* ---------- Comptabilité ---------- */
+.acc-stats { grid-template-columns: repeat(6, 1fr); }
+@media (max-width: 1300px) { .acc-stats { grid-template-columns: repeat(3, 1fr); } }
+@media (max-width: 600px) { .acc-stats { grid-template-columns: repeat(2, 1fr); } .acc-stats .stat .value { font-size: 22px; } }
+input.pt { width: 18px; height: 18px; accent-color: var(--ok); cursor: pointer; }
+.bday.clickable { cursor: pointer; }
+#print-root { display: none; }
+@media print {
+  body > *:not(#print-root) { display: none !important; }
+  #print-root { display: block; color: #000; font-size: 11px; }
+  #print-root h1 { font-family: var(--display); text-transform: uppercase; margin: 0 0 4px; font-size: 20px; }
+  #print-root .grid.two { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; }
+  #print-root .table th, #print-root .table td { padding: 4px 6px; }
+  #print-root tr { break-inside: avoid; }
+  @page { margin: 14mm; }
+}

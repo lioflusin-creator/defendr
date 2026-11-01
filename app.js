@@ -141,7 +141,7 @@ const NAV = [
   { path: '/membres', label: 'Membres', short: 'Membres', icon: 'users' },
   { path: '/planning', label: 'Planning', short: 'Planning', icon: 'calendar' },
   { path: '/planification', label: 'Planification annuelle', icon: 'list', soon: true },
-  { path: '/paiements', label: 'Comptabilité', short: 'Compta', icon: 'euro', admin: true, soon: true },
+  { path: '/paiements', label: 'Comptabilité', short: 'Compta', icon: 'euro', admin: true },
   { path: '/disciplines', label: 'Disciplines', icon: 'target' },
   { path: '/niveaux', label: 'Niveaux', icon: 'layers' },
   { path: '/statistiques', label: 'Statistiques', short: 'Stats', icon: 'chart', soon: true },
@@ -303,6 +303,7 @@ async function route() {
     else if (path.startsWith('/membres/')) await viewMember(view, path.split('/')[2]);
     else if (path === '/membres') await viewMembers(view);
     else if (path === '/planning') await viewPlanning(view);
+    else if (path === '/paiements' && isAdmin()) await viewAccounting(view);
     else if (path === '/disciplines') await viewDisciplines(view);
     else if (path === '/niveaux') await viewLevels(view);
     else if (path === '/parametres') await viewSettings(view);
@@ -582,8 +583,8 @@ async function viewMember(view, id) {
       ${isAdmin() ? `<div class="card card-pad"><div class="row between"><h2 style="margin:0">Paiements${season ? ' · ' + esc(season.label) : ''}</h2>
           ${due > 0 ? `<span class="badge danger">Reste ${fmtMoney(due)}</span>` : (m.fee_amount ? '<span class="badge ok">À jour</span>' : '')}</div>
         <div class="small muted mb">Payé : ${fmtMoney(paid)}${m.fee_amount != null ? ' sur ' + fmtMoney(m.fee_amount) : ''}</div>
-        ${seasonPays.length ? seasonPays.map(p => `<div class="bday"><div style="flex:1"><div style="font-weight:600">${esc(p.payment_type)}</div><div class="small muted">${fmtDate(p.payment_date)}${p.method ? ' · ' + esc(p.method) : ''}${p.bank_checked ? ' · pointé' : ''}</div></div><div style="text-align:right"><div style="font-weight:700">${fmtMoney(p.amount)}</div><span class="badge ${p.status === 'payé' ? 'ok' : 'warn'}">${p.status === 'payé' ? 'Payé' : 'En attente'}</span></div></div>`).join('') : '<div class="empty">Aucun paiement enregistré.</div>'}
-        <p class="small muted">L’enregistrement des paiements arrive avec la rubrique Comptabilité.</p>
+        ${seasonPays.length ? seasonPays.map(p => `<div class="bday clickable" data-pay="${p.id}"><div style="flex:1"><div style="font-weight:600">${esc(p.payment_type)}</div><div class="small muted">${fmtDate(p.payment_date)}${p.method ? ' · ' + esc(p.method) : ''}${p.bank_checked ? ' · pointé' : ''}</div></div><div style="text-align:right"><div style="font-weight:700">${fmtMoney(p.amount)}</div><span class="badge ${p.status === 'payé' ? 'ok' : 'warn'}">${p.status === 'payé' ? 'Payé' : 'En attente'}</span></div></div>`).join('') : '<div class="empty">Aucun paiement enregistré.</div>'}
+        <button class="btn btn-sm mt" id="add-pay">${icon('plus')}Enregistrer un paiement</button>
       </div>` : ''}
       <div class="card card-pad"><div class="row between"><h2 style="margin:0">Assiduité</h2>${att.length ? `<span class="badge ${st.cls}">${st.rate}% · ${st.label}</span>` : ''}</div>
         <div class="small muted">${att.length ? `${present} présence(s) sur ${att.length} séance(s)` : 'Aucune séance'} depuis l’inscription${m.registration_date ? ' le ' + fmtDate(m.registration_date) : ''}.</div>
@@ -592,6 +593,8 @@ async function viewMember(view, id) {
     </div>
     <div class="mt"><button class="btn btn-danger btn-sm" id="del">${icon('trash')}Supprimer ce membre</button></div>`;
   $('#edit').onclick = () => memberForm(m, () => route());
+  $('#add-pay') && ($('#add-pay').onclick = () => paymentForm(null, { member_id: m.id, amount: due > 0 ? due : m.fee_amount }));
+  $$('[data-pay]', view).forEach(r => r.onclick = () => paymentForm(seasonPays.find(p => p.id === r.dataset.pay)));
   $('#del').onclick = async () => {
     if (!await confirmBox('Supprimer le membre', `Supprimer définitivement <strong>${esc(fullName(m))}</strong> ? Ses présences seront aussi supprimées. Pour un membre qui arrête, préférez le statut « Inactif ».`)) return;
     const { error } = await sb.from('members').delete().eq('id', m.id);
@@ -1082,6 +1085,260 @@ function courseForm(c, defaults = {}) {
       } catch (e) { fail(e); btn.disabled = false; }
     },
   });
+}
+
+/* =====================================================================
+   Comptabilité
+   ===================================================================== */
+const METHODS = ['Virement', 'Chèque', 'Espèces', 'Carte bancaire', 'Prélèvement', 'Autre'];
+S.acc = { tab: 'paiements', status: 'tous', archives: false, search: '' };
+
+async function loadAccounting() {
+  const season = activeSeason();
+  const sq = q => season ? q.eq('season_id', season.id) : q;
+  const [pr, er, mr] = await Promise.all([
+    sq(sb.from('payments').select('*')).order('payment_date', { ascending: false }),
+    sq(sb.from('expenses').select('*')).order('expense_date', { ascending: false }),
+    sb.from('members').select('id, first_name, last_name, status, fee_amount').order('last_name'),
+  ]);
+  for (const r of [pr, er, mr]) if (r.error) throw r.error;
+  return { season, payments: pr.data, expenses: er.data, members: mr.data };
+}
+function accountingTotals({ season, payments, expenses }) {
+  const live = payments.filter(p => !p.archived), liveE = expenses.filter(e => !e.archived);
+  const sum = a => a.reduce((s, x) => s + Number(x.amount), 0);
+  const paid = sum(live.filter(p => p.status === 'payé')), pending = sum(live.filter(p => p.status === 'en attente'));
+  const exp = sum(liveE), opening = Number(season?.opening_balance || 0);
+  const bankIn = sum(live.filter(p => p.status === 'payé' && p.bank_checked)), bankOut = sum(liveE.filter(e => e.bank_checked));
+  return { paid, pending, exp, opening, balance: opening + paid - exp, bankIn, bankOut, bank: bankIn - bankOut };
+}
+
+async function viewAccounting(view) {
+  const D = await loadAccounting(), A = S.acc, T = accountingTotals(D);
+  const mName = id => { const m = D.members.find(x => x.id === id); return m ? fullName(m) : '—'; };
+  const norm = s => (s || '').toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g, '');
+
+  view.innerHTML = head('Comptabilité', `${fmtMoney(T.paid)} encaissés · ${fmtMoney(T.pending)} en attente · ${fmtMoney(T.exp)} de dépenses${D.season ? ' · saison ' + esc(D.season.label) : ''}`,
+    `<button class="btn" id="bilan">${icon('chart')}Bilan simplifié</button><button class="btn" id="pdf">${icon('file')}Export PDF</button>`) + `
+    <div class="grid acc-stats mb">
+      <div class="card stat"><div class="label">Solde début d’exercice</div><div class="value">${fmtMoney(T.opening)}</div></div>
+      <div class="card stat"><div class="label">Revenus encaissés</div><div class="value" style="color:var(--ok)">${fmtMoney(T.paid)}</div></div>
+      <div class="card stat"><div class="label">En attente</div><div class="value" style="color:var(--warn)">${fmtMoney(T.pending)}</div></div>
+      <div class="card stat"><div class="label">Dépenses</div><div class="value" style="color:var(--danger)">${fmtMoney(T.exp)}</div></div>
+      <div class="card stat accent"><div class="label">Solde comptable</div><div class="value">${fmtMoney(T.balance)}</div><div class="hint">Début + encaissés − dépenses</div></div>
+      <div class="card stat"><div class="label">Pointé banque</div><div class="value">${fmtMoney(T.bank)}</div><div class="hint">${fmtMoney(T.bankIn)} − ${fmtMoney(T.bankOut)}</div></div>
+    </div>
+    <div class="toolbar between">
+      <div class="chips">
+        <button class="chip ${A.tab === 'paiements' ? 'active' : ''}" data-tab="paiements">Paiements <span class="n">${D.payments.filter(p => !p.archived).length}</span></button>
+        <button class="chip ${A.tab === 'depenses' ? 'active' : ''}" data-tab="depenses">Dépenses <span class="n">${D.expenses.filter(e => !e.archived).length}</span></button>
+      </div>
+      <button class="btn btn-primary" id="add">${icon('plus')}${A.tab === 'paiements' ? 'Nouveau paiement' : 'Nouvelle dépense'}</button>
+    </div>
+    <div class="toolbar">
+      <input class="input" type="search" id="acc-search" placeholder="${A.tab === 'paiements' ? 'Rechercher par membre…' : 'Rechercher une dépense…'}" value="${esc(A.search)}" aria-label="Rechercher">
+      ${A.tab === 'paiements' ? `<div class="chips">${[['tous', 'Tous'], ['payé', 'Payés'], ['en attente', 'En attente'], ['a-pointer', 'À pointer']].map(([k, l]) => `<button class="chip ${A.status === k ? 'active' : ''}" data-st="${k}">${l}</button>`).join('')}</div>` : `<div class="chips"><button class="chip ${A.status === 'a-pointer' ? 'active' : ''}" data-st="${A.status === 'a-pointer' ? 'tous' : 'a-pointer'}">À pointer</button></div>`}
+      <label class="check" style="margin-left:auto"><input type="checkbox" id="arch" ${A.archives ? 'checked' : ''}><span>Voir les archives</span></label>
+    </div>
+    <div class="card" id="acc-list"></div>`;
+
+  const draw = () => {
+    const q = norm(A.search), box = $('#acc-list');
+    if (A.tab === 'paiements') {
+      const rows = D.payments.filter(p => p.archived === A.archives)
+        .filter(p => A.status === 'tous' || (A.status === 'a-pointer' ? (p.status === 'payé' && !p.bank_checked) : p.status === A.status))
+        .filter(p => !q || norm(mName(p.member_id) + ' ' + p.payment_type + ' ' + (p.notes || '')).includes(q));
+      if (!rows.length) { box.innerHTML = '<div class="empty">Aucun paiement.</div>'; return; }
+      box.innerHTML = `<div class="table-wrap only-desktop"><table class="table"><thead><tr><th title="Pointé sur le relevé bancaire">Pt</th><th>Membre</th><th>Type</th><th>Montant</th><th>Mode</th><th>Date</th><th>Statut</th><th></th></tr></thead><tbody>
+        ${rows.map(p => `<tr><td><input type="checkbox" class="pt" data-pt="${p.id}" ${p.bank_checked ? 'checked' : ''} aria-label="Pointé"></td>
+          <td><a href="#/membres/${p.member_id}" style="font-weight:600;text-decoration:none">${esc(mName(p.member_id))}</a>${p.notes ? `<div class="small muted">${esc(p.notes)}</div>` : ''}</td>
+          <td>${esc(p.payment_type)}</td><td style="font-weight:700">${fmtMoney(p.amount)}</td><td>${esc(p.method || '—')}</td>
+          <td>${fmtDate(p.payment_date)}${p.due_date && p.due_date !== p.payment_date ? `<div class="small muted">échéance ${fmtDate(p.due_date)}</div>` : ''}</td>
+          <td><span class="badge ${p.status === 'payé' ? 'ok' : 'warn'}">${p.status === 'payé' ? 'Payé' : 'En attente'}</span></td>
+          <td style="white-space:nowrap"><button class="icon-btn" data-edit="${p.id}" aria-label="Modifier">${icon('edit')}</button></td></tr>`).join('')}
+      </tbody></table></div>
+      <div class="list only-mobile">${rows.map(p => `<div class="list-item" data-edit="${p.id}">
+        <input type="checkbox" class="pt" data-pt="${p.id}" ${p.bank_checked ? 'checked' : ''} aria-label="Pointé">
+        <div class="grow"><div style="font-weight:600">${esc(mName(p.member_id))}</div><div class="small muted">${fmtDate(p.payment_date)} · ${esc(p.method || '')}</div></div>
+        <div class="right"><strong>${fmtMoney(p.amount)}</strong><span class="badge ${p.status === 'payé' ? 'ok' : 'warn'}">${p.status === 'payé' ? 'Payé' : 'En attente'}</span></div></div>`).join('')}</div>`;
+    } else {
+      const rows = D.expenses.filter(e => e.archived === A.archives)
+        .filter(e => A.status !== 'a-pointer' || !e.bank_checked)
+        .filter(e => !q || norm(e.label + ' ' + e.category + ' ' + (e.supplier || '')).includes(q));
+      if (!rows.length) { box.innerHTML = '<div class="empty">Aucune dépense.</div>'; return; }
+      box.innerHTML = `<div class="table-wrap only-desktop"><table class="table"><thead><tr><th>Pt</th><th>Libellé</th><th>Catégorie</th><th>Montant</th><th>Mode</th><th>Date</th><th></th></tr></thead><tbody>
+        ${rows.map(e => `<tr><td><input type="checkbox" class="pt" data-pt="${e.id}" ${e.bank_checked ? 'checked' : ''} aria-label="Pointé"></td>
+          <td style="font-weight:600">${esc(e.label)}${e.supplier || e.notes ? `<div class="small muted" style="font-weight:400">${esc([e.supplier, e.notes].filter(Boolean).join(' · '))}</div>` : ''}</td>
+          <td><span class="badge">${esc(e.category || '—')}</span></td><td style="font-weight:700;color:var(--danger)">−${fmtMoney(e.amount)}</td>
+          <td>${esc(e.method || '—')}</td><td>${fmtDate(e.expense_date)}</td>
+          <td><button class="icon-btn" data-edit="${e.id}" aria-label="Modifier">${icon('edit')}</button></td></tr>`).join('')}
+      </tbody></table></div>
+      <div class="list only-mobile">${rows.map(e => `<div class="list-item" data-edit="${e.id}">
+        <input type="checkbox" class="pt" data-pt="${e.id}" ${e.bank_checked ? 'checked' : ''} aria-label="Pointé">
+        <div class="grow"><div style="font-weight:600">${esc(e.label)}</div><div class="small muted">${fmtDate(e.expense_date)} · ${esc(e.category || '')}</div></div>
+        <div class="right"><strong style="color:var(--danger)">−${fmtMoney(e.amount)}</strong></div></div>`).join('')}</div>`;
+    }
+    $$('.pt', box).forEach(cb => {
+      cb.onclick = ev => ev.stopPropagation();
+      cb.onchange = async () => {
+        const table = A.tab === 'paiements' ? 'payments' : 'expenses';
+        const { error } = await sb.from(table).update({ bank_checked: cb.checked }).eq('id', cb.dataset.pt);
+        if (error) { cb.checked = !cb.checked; return fail(error); }
+        const item = (A.tab === 'paiements' ? D.payments : D.expenses).find(x => x.id === cb.dataset.pt); item.bank_checked = cb.checked;
+        toast(cb.checked ? 'Pointé' : 'Pointage retiré');
+      };
+    });
+    $$('[data-edit]', box).forEach(b => b.onclick = () => A.tab === 'paiements'
+      ? paymentForm(D.payments.find(p => p.id === b.dataset.edit))
+      : expenseForm(D.expenses.find(e => e.id === b.dataset.edit)));
+  };
+  draw();
+  $('#acc-search').oninput = e => { A.search = e.target.value; draw(); };
+  $$('[data-tab]', view).forEach(b => b.onclick = () => { A.tab = b.dataset.tab; A.status = 'tous'; A.search = ''; route(); });
+  $$('[data-st]', view).forEach(b => b.onclick = () => { A.status = b.dataset.st; route(); });
+  $('#arch').onchange = e => { A.archives = e.target.checked; route(); };
+  $('#add').onclick = () => A.tab === 'paiements' ? paymentForm(null) : expenseForm(null);
+  $('#bilan').onclick = () => showBilan(D);
+  $('#pdf').onclick = () => exportPdf(D);
+}
+
+async function paymentForm(p, defaults = {}) {
+  const { data: members, error } = await sb.from('members').select('id, first_name, last_name, status, fee_amount').order('last_name');
+  if (error) return fail(error);
+  const v = p || { payment_type: (S.settings?.revenue_types || []).includes('Cotisation annuelle') ? 'Cotisation annuelle' : (S.settings?.revenue_types || [])[0], payment_date: isoDay(new Date()), status: 'payé', method: 'Virement', ...defaults };
+  const types = [...new Set([...(S.settings?.revenue_types || []), v.payment_type].filter(Boolean))];
+  openModal({
+    title: p ? 'Modifier le paiement' : 'Nouveau paiement',
+    body: `<form id="pf" class="form-grid" novalidate>
+      <div class="field full"><label for="pf-m">Membre *</label><select class="input" id="pf-m" name="member_id"><option value="">— Choisir —</option>${members.filter(m => m.status === 'actif' || m.id === v.member_id).map(m => `<option value="${m.id}" ${m.id === v.member_id ? 'selected' : ''}>${esc(fullName(m))}</option>`).join('')}</select></div>
+      <div class="field"><label for="pf-t">Type *</label><select class="input" id="pf-t" name="payment_type">${types.map(t => `<option ${t === v.payment_type ? 'selected' : ''}>${esc(t)}</option>`).join('')}</select></div>
+      <div class="field"><label for="pf-a">Montant (€) *</label><input class="input" id="pf-a" name="amount" type="number" step="0.01" min="0" inputmode="decimal" value="${esc(v.amount ?? '')}"></div>
+      <div class="field"><label for="pf-me">Mode de paiement</label><select class="input" id="pf-me" name="method">${[...new Set([...METHODS, v.method].filter(Boolean))].map(x => `<option ${x === v.method ? 'selected' : ''}>${esc(x)}</option>`).join('')}</select></div>
+      <div class="field"><label for="pf-s">Statut</label><select class="input" id="pf-s" name="status"><option value="payé" ${v.status === 'payé' ? 'selected' : ''}>Payé</option><option value="en attente" ${v.status === 'en attente' ? 'selected' : ''}>En attente</option></select></div>
+      <div class="field"><label for="pf-d">Date du paiement *</label><input class="input" id="pf-d" name="payment_date" type="date" value="${esc(v.payment_date || '')}"></div>
+      <div class="field"><label for="pf-dd">Date d’encaissement prévue</label><input class="input" id="pf-dd" name="due_date" type="date" value="${esc(v.due_date || '')}"><span class="help">Pour un chèque à encaisser plus tard.</span></div>
+      ${p ? '' : `<div class="field full"><label for="pf-n">Paiement en plusieurs fois</label><select class="input" id="pf-n"><option value="1">En une fois</option>${[2, 3, 4, 5, 6, 8, 10].map(n => `<option value="${n}">En ${n} fois (un par mois)</option>`).join('')}</select><span class="help" id="pf-help">Le montant total sera réparti en plusieurs paiements, un par mois à partir de la date indiquée.</span></div>`}
+      <label class="check full"><input type="checkbox" name="bank_checked" ${v.bank_checked ? 'checked' : ''}><span>Pointé sur le relevé bancaire</span></label>
+      <div class="field full"><label for="pf-no">Notes</label><input class="input" id="pf-no" name="notes" value="${esc(v.notes || '')}"></div>
+    </form>`,
+    foot: `${p ? `<button class="icon-btn" id="pf-del" aria-label="Supprimer" title="Supprimer">${icon('trash')}</button><button class="btn" id="pf-arch">${p.archived ? 'Désarchiver' : 'Archiver'}</button>` : ''}<button class="btn" data-close>Annuler</button><button class="btn btn-primary" id="pf-save">Enregistrer</button>`,
+    onMount: root => {
+      $('#pf-m', root).onchange = e => { const m = members.find(x => x.id === e.target.value); if (m?.fee_amount && !$('#pf-a', root).value) $('#pf-a', root).value = m.fee_amount; };
+      $('#pf-save', root).onclick = async () => {
+        const d = readForm($('#pf', root));
+        if (!d.member_id || d.amount == null || !d.payment_date) return toast('Membre, montant et date sont obligatoires.', 'error');
+        if (p) {
+          const { error } = await sb.from('payments').update(d).eq('id', p.id);
+          if (error) return fail(error);
+          closeModal(); toast('Paiement mis à jour'); return route();
+        }
+        const n = Number($('#pf-n', root).value || 1);
+        const cents = Math.round(d.amount * 100), base = Math.floor(cents / n), extra = cents - base * n;
+        const rows = Array.from({ length: n }, (_, i) => {
+          const dt = new Date(parseDay(d.payment_date)); dt.setMonth(dt.getMonth() + i);
+          const day = isoDay(dt);
+          return { ...d, amount: (base + (i === 0 ? extra : 0)) / 100, payment_date: day, due_date: n > 1 ? day : d.due_date, bank_checked: i === 0 ? d.bank_checked : false, season_id: activeSeason()?.id || null, notes: n > 1 ? [d.notes, `${i + 1}/${n}`].filter(Boolean).join(' · ') : d.notes };
+        });
+        const { error } = await sb.from('payments').insert(rows);
+        if (error) return fail(error);
+        closeModal(); toast(n > 1 ? `${n} paiements enregistrés` : 'Paiement enregistré'); route();
+      };
+      if (p) {
+        $('#pf-arch', root).onclick = async () => { const { error } = await sb.from('payments').update({ archived: !p.archived }).eq('id', p.id); if (error) return fail(error); closeModal(); toast(p.archived ? 'Paiement désarchivé' : 'Paiement archivé'); route(); };
+        $('#pf-del', root).onclick = async () => {
+          if (!await confirmBox('Supprimer le paiement', `Supprimer ce paiement de ${fmtMoney(p.amount)} ? Pour le garder en mémoire sans le compter, préférez « Archiver ».`)) return;
+          const { error } = await sb.from('payments').delete().eq('id', p.id); if (error) return fail(error); toast('Paiement supprimé'); route();
+        };
+      }
+    },
+  });
+}
+
+function expenseForm(e) {
+  const v = e || { expense_date: isoDay(new Date()), method: 'Prélèvement' };
+  const cats = [...new Set([...(S.settings?.expense_categories || []), v.category].filter(Boolean))];
+  openModal({
+    title: e ? 'Modifier la dépense' : 'Nouvelle dépense',
+    body: `<form id="ef" class="form-grid" novalidate>
+      <div class="field full"><label for="ef-l">Libellé *</label><input class="input" id="ef-l" name="label" value="${esc(v.label || '')}" placeholder="ex : Location de la salle"></div>
+      <div class="field"><label for="ef-c">Catégorie</label><select class="input" id="ef-c" name="category"><option value="">—</option>${cats.map(c => `<option ${c === v.category ? 'selected' : ''}>${esc(c)}</option>`).join('')}</select></div>
+      <div class="field"><label for="ef-a">Montant (€) *</label><input class="input" id="ef-a" name="amount" type="number" step="0.01" min="0" inputmode="decimal" value="${esc(v.amount ?? '')}"></div>
+      <div class="field"><label for="ef-m">Mode de paiement</label><select class="input" id="ef-m" name="method">${[...new Set([...METHODS, v.method].filter(Boolean))].map(x => `<option ${x === v.method ? 'selected' : ''}>${esc(x)}</option>`).join('')}</select></div>
+      <div class="field"><label for="ef-d">Date *</label><input class="input" id="ef-d" name="expense_date" type="date" value="${esc(v.expense_date || '')}"></div>
+      <div class="field full"><label for="ef-s">Fournisseur</label><input class="input" id="ef-s" name="supplier" value="${esc(v.supplier || '')}"></div>
+      <label class="check full"><input type="checkbox" name="bank_checked" ${v.bank_checked ? 'checked' : ''}><span>Pointé sur le relevé bancaire</span></label>
+      <div class="field full"><label for="ef-n">Notes</label><input class="input" id="ef-n" name="notes" value="${esc(v.notes || '')}"></div>
+    </form>`,
+    foot: `${e ? `<button class="icon-btn" id="ef-del" aria-label="Supprimer" title="Supprimer">${icon('trash')}</button><button class="btn" id="ef-arch">${e.archived ? 'Désarchiver' : 'Archiver'}</button>` : ''}<button class="btn" data-close>Annuler</button><button class="btn btn-primary" id="ef-save">Enregistrer</button>`,
+    onMount: root => {
+      $('#ef-save', root).onclick = async () => {
+        const d = readForm($('#ef', root));
+        if (!d.label || d.amount == null || !d.expense_date) return toast('Libellé, montant et date sont obligatoires.', 'error');
+        const { error } = e ? await sb.from('expenses').update(d).eq('id', e.id) : await sb.from('expenses').insert({ ...d, season_id: activeSeason()?.id || null });
+        if (error) return fail(error);
+        closeModal(); toast(e ? 'Dépense mise à jour' : 'Dépense enregistrée'); S.acc.tab = 'depenses'; route();
+      };
+      if (e) {
+        $('#ef-arch', root).onclick = async () => { const { error } = await sb.from('expenses').update({ archived: !e.archived }).eq('id', e.id); if (error) return fail(error); closeModal(); toast(e.archived ? 'Dépense désarchivée' : 'Dépense archivée'); route(); };
+        $('#ef-del', root).onclick = async () => {
+          if (!await confirmBox('Supprimer la dépense', `Supprimer « ${esc(e.label)} » (${fmtMoney(e.amount)}) ?`)) return;
+          const { error } = await sb.from('expenses').delete().eq('id', e.id); if (error) return fail(error); toast('Dépense supprimée'); route();
+        };
+      }
+    },
+  });
+}
+
+function bilanData(D) {
+  const T = accountingTotals(D);
+  const group = (rows, key) => Object.entries(rows.reduce((a, x) => { const k = x[key] || 'Autre'; a[k] = (a[k] || 0) + Number(x.amount); return a; }, {})).sort((a, b) => b[1] - a[1]);
+  return {
+    T,
+    recettes: group(D.payments.filter(p => !p.archived && p.status === 'payé'), 'payment_type'),
+    depenses: group(D.expenses.filter(e => !e.archived), 'category'),
+    methodes: group(D.payments.filter(p => !p.archived && p.status === 'payé'), 'method'),
+  };
+}
+function bilanHtml(D) {
+  const B = bilanData(D), T = B.T;
+  const tbl = (rows, total, neg) => `<table class="table"><tbody>${rows.map(([k, v]) => `<tr><td>${esc(k)}</td><td style="text-align:right">${neg ? '−' : ''}${fmtMoney(v)}</td></tr>`).join('') || '<tr><td class="muted">Aucune</td><td></td></tr>'}<tr><td><strong>Total</strong></td><td style="text-align:right"><strong>${neg ? '−' : ''}${fmtMoney(total)}</strong></td></tr></tbody></table>`;
+  return `
+    <div class="grid two">
+      <div><h2 class="section-title">Recettes encaissées</h2>${tbl(B.recettes, T.paid)}</div>
+      <div><h2 class="section-title">Dépenses</h2>${tbl(B.depenses, T.exp, true)}</div>
+    </div>
+    <h2 class="section-title mt">Résultat</h2>
+    <table class="table"><tbody>
+      <tr><td>Solde en début d’exercice</td><td style="text-align:right">${fmtMoney(T.opening)}</td></tr>
+      <tr><td>+ Recettes encaissées</td><td style="text-align:right">${fmtMoney(T.paid)}</td></tr>
+      <tr><td>− Dépenses</td><td style="text-align:right">−${fmtMoney(T.exp)}</td></tr>
+      <tr><td><strong>Résultat de l’exercice (recettes − dépenses)</strong></td><td style="text-align:right"><strong>${fmtMoney(T.paid - T.exp)}</strong></td></tr>
+      <tr><td><strong>Solde comptable</strong></td><td style="text-align:right"><strong>${fmtMoney(T.balance)}</strong></td></tr>
+      <tr><td>Paiements en attente</td><td style="text-align:right">${fmtMoney(T.pending)}</td></tr>
+    </tbody></table>
+    ${B.methodes.length ? `<h2 class="section-title mt">Recettes par mode de paiement</h2>${tbl(B.methodes, T.paid)}` : ''}`;
+}
+function showBilan(D) {
+  openModal({ title: `Bilan simplifié${D.season ? ' · ' + D.season.label : ''}`, body: bilanHtml(D), foot: `<button class="btn" data-close>Fermer</button><button class="btn btn-primary" id="b-pdf">${icon('file')}Export PDF</button>`, onMount: r => $('#b-pdf', r).onclick = () => { closeModal(); exportPdf(D); } });
+}
+function exportPdf(D) {
+  const mName = id => { const m = D.members.find(x => x.id === id); return m ? fullName(m) : '—'; };
+  const pays = D.payments.filter(p => !p.archived), exps = D.expenses.filter(e => !e.archived);
+  let el = $('#print-root');
+  if (!el) { el = document.createElement('div'); el.id = 'print-root'; document.body.appendChild(el); }
+  el.innerHTML = `
+    <h1>${esc(S.settings?.club_name || 'Club')}</h1>
+    <p class="muted">Comptabilité${D.season ? ' — saison ' + esc(D.season.label) : ''} · édité le ${new Date().toLocaleDateString('fr-FR', { day: 'numeric', month: 'long', year: 'numeric' })}</p>
+    ${bilanHtml(D)}
+    <h2 class="section-title mt">Détail des paiements (${pays.length})</h2>
+    <table class="table"><thead><tr><th>Date</th><th>Membre</th><th>Type</th><th>Mode</th><th>Statut</th><th>Pointé</th><th style="text-align:right">Montant</th></tr></thead><tbody>
+      ${pays.slice().sort((a, b) => a.payment_date.localeCompare(b.payment_date)).map(p => `<tr><td>${fmtDate(p.payment_date)}</td><td>${esc(mName(p.member_id))}</td><td>${esc(p.payment_type)}</td><td>${esc(p.method || '')}</td><td>${p.status === 'payé' ? 'Payé' : 'En attente'}</td><td>${p.bank_checked ? 'Oui' : ''}</td><td style="text-align:right">${fmtMoney(p.amount)}</td></tr>`).join('')}
+    </tbody></table>
+    <h2 class="section-title mt">Détail des dépenses (${exps.length})</h2>
+    <table class="table"><thead><tr><th>Date</th><th>Libellé</th><th>Catégorie</th><th>Mode</th><th>Pointé</th><th style="text-align:right">Montant</th></tr></thead><tbody>
+      ${exps.slice().sort((a, b) => a.expense_date.localeCompare(b.expense_date)).map(e => `<tr><td>${fmtDate(e.expense_date)}</td><td>${esc(e.label)}</td><td>${esc(e.category || '')}</td><td>${esc(e.method || '')}</td><td>${e.bank_checked ? 'Oui' : ''}</td><td style="text-align:right">${fmtMoney(e.amount)}</td></tr>`).join('')}
+    </tbody></table>`;
+  setTimeout(() => window.print(), 50);
 }
 
 /* =====================================================================
