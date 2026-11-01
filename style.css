@@ -404,3 +404,8 @@ input.pt { width: 18px; height: 18px; accent-color: var(--ok); cursor: pointer; 
 @media (hover: none) { .pi-actions { opacity: 1; } .pi-actions .icon-btn { padding: 4px; } }
 .pi-actions .icon-btn svg { width: 15px; height: 15px; }
 .pi-actions .icon-btn:disabled { opacity: .25; cursor: default; }
+
+/* ---------- WhatsApp ---------- */
+.wa-preview { white-space: pre-wrap; background: #e7ffdb; color: #111b21; border-radius: 10px 10px 10px 2px; padding: 10px 12px; font-size: 14px; max-width: 420px; box-shadow: 0 1px 1px rgba(0,0,0,.08); }
+@media (prefers-color-scheme: dark) { .wa-preview { background: #005c4b; color: #e9edef; } }
+a.btn.disabled { opacity: .45; }
