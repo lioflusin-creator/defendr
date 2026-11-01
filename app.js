@@ -663,7 +663,8 @@ async function viewMember(view, id) {
           ${due > 0 ? `<span class="badge danger">Reste ${fmtMoney(due)}</span>` : (m.fee_amount ? '<span class="badge ok">À jour</span>' : '')}</div>
         <div class="small muted mb">Payé : ${fmtMoney(paid)}${m.fee_amount != null ? ' sur ' + fmtMoney(m.fee_amount) : ''}</div>
         ${seasonPays.length ? seasonPays.map(p => `<div class="bday clickable" data-pay="${p.id}"><div style="flex:1"><div style="font-weight:600">${esc(p.payment_type)}</div><div class="small muted">${fmtDate(p.payment_date)}${p.method ? ' · ' + esc(p.method) : ''}${p.bank_checked ? ' · pointé' : ''}</div></div><div style="text-align:right"><div style="font-weight:700">${fmtMoney(p.amount)}</div><span class="badge ${p.status === 'payé' ? 'ok' : 'warn'}">${p.status === 'payé' ? 'Payé' : 'En attente'}</span></div></div>`).join('') : '<div class="empty">Aucun paiement enregistré.</div>'}
-        <button class="btn btn-sm mt" id="add-pay">${icon('plus')}Enregistrer un paiement</button>
+        <div class="row wrap mt" style="gap:8px"><button class="btn btn-sm" id="add-pay">${icon('plus')}Enregistrer un paiement</button>
+        ${paid > 0 ? `<button class="btn btn-sm" id="attest">${icon('file')}Attestation de paiement</button>` : ''}</div>
       </div>` : ''}
       <div class="card card-pad"><div class="row between"><h2 style="margin:0">Assiduité</h2>${att.length ? `<span class="badge ${st.cls}">${st.rate}% · ${st.label}</span>` : ''}</div>
         <div class="small muted">${att.length ? `${present} présence(s) sur ${att.length} séance(s)` : 'Aucune séance'} depuis l’inscription${m.registration_date ? ' le ' + fmtDate(m.registration_date) : ''}.</div>
@@ -673,6 +674,7 @@ async function viewMember(view, id) {
     <div class="mt"><button class="btn btn-danger btn-sm" id="del">${icon('trash')}Supprimer ce membre</button></div>`;
   $('#edit').onclick = () => memberForm(m, () => route());
   $('#add-pay') && ($('#add-pay').onclick = () => paymentForm(null, { member_id: m.id, amount: due > 0 ? due : m.fee_amount }));
+  $('#attest') && ($('#attest').onclick = () => printAttestation(m, seasonPays.filter(p => p.status === 'payé' && !p.archived), season));
   $$('[data-pay]', view).forEach(r => r.onclick = () => paymentForm(seasonPays.find(p => p.id === r.dataset.pay)));
   $('#del').onclick = async () => {
     if (!await confirmBox('Supprimer le membre', `Supprimer définitivement <strong>${esc(fullName(m))}</strong> ? Ses présences seront aussi supprimées. Pour un membre qui arrête, préférez le statut « Inactif ».`)) return;
@@ -787,6 +789,13 @@ async function viewSettings(view) {
           <div class="field"><label for="st-end">Heure de fin</label><input class="input" id="st-end" name="default_end_time" type="time" value="${esc((s.default_end_time || '').slice(0, 5))}"></div>
         </div>
         <div class="field"><label for="st-wa">Votre numéro WhatsApp (rappel anniversaires)</label><input class="input" id="st-wa" name="whatsapp_number" type="tel" value="${esc(s.whatsapp_number || '')}" placeholder="06 12 34 56 78"></div>
+        <div class="section-title mt">Pour les attestations</div>
+        <div class="field"><label for="st-addr">Adresse du club</label><input class="input" id="st-addr" name="club_address" value="${esc(s.club_address || '')}" placeholder="ex : Gymnase…, 34800 Clermont-l’Hérault"></div>
+        <div class="form-grid">
+          <div class="field"><label for="st-pres">Président(e)</label><input class="input" id="st-pres" name="president_name" value="${esc(s.president_name || '')}"></div>
+          <div class="field"><label for="st-legal">N° RNA ou SIRET</label><input class="input" id="st-legal" name="club_legal_id" value="${esc(s.club_legal_id || '')}" placeholder="W343…"></div>
+        </div>
+        <div class="field"><label for="st-mail">E-mail du club</label><input class="input" id="st-mail" name="club_email" type="email" value="${esc(s.club_email || '')}"></div>
         <button class="btn btn-primary" type="submit">Enregistrer</button>
       </form>
 
@@ -1172,6 +1181,46 @@ function courseForm(c, defaults = {}) {
       } catch (e) { fail(e); btn.disabled = false; }
     },
   });
+}
+
+/* =====================================================================
+   Impression (attestations, rapports)
+   ===================================================================== */
+function printDoc(html, cls = '') {
+  let el = $('#print-root');
+  if (!el) { el = document.createElement('div'); el.id = 'print-root'; document.body.appendChild(el); }
+  el.className = cls;
+  el.innerHTML = html;
+  setTimeout(() => window.print(), 60);
+}
+
+function printAttestation(m, pays, season) {
+  const s = S.settings || {};
+  const total = pays.reduce((t, p) => t + Number(p.amount), 0);
+  const minor = (ageOf(m.birth_date) ?? 99) < 18;
+  const today = new Date().toLocaleDateString('fr-FR', { day: 'numeric', month: 'long', year: 'numeric' });
+  const city = (s.club_address || '').match(/\d{5}\s+(.+)$/)?.[1] || '';
+  if (!s.president_name || !s.club_address) toast('Astuce : complétez l’adresse du club et le nom du président dans les Paramètres.', '');
+  printDoc(`
+    <div class="attest">
+      <div class="attest-head">
+        <div class="logo-mark">D</div>
+        <div><div class="attest-club">${esc(s.club_name || 'Club')}</div>
+          <div class="small">${esc(s.club_address || '')}${s.club_legal_id ? ' · ' + esc(s.club_legal_id) : ''}${s.club_email ? ' · ' + esc(s.club_email) : ''}</div></div>
+      </div>
+      <h1>Attestation de paiement</h1>
+      <p>Je soussigné(e) <strong>${esc(s.president_name || '…………………………')}</strong>, président(e) de l’association <strong>${esc(s.club_name || '')}</strong>, atteste que
+      <strong>${esc(fullName(m))}</strong>${m.birth_date ? `, né(e) le ${fmtDate(m.birth_date)}` : ''}${minor && m.guardian_name ? `, représenté(e) par ${esc(m.guardian_name)}` : ''},
+      est adhérent(e) du club pour la saison <strong>${esc(season?.label || '')}</strong>${m.discipline_id ? ` (${esc(discName(m.discipline_id))})` : ''}
+      et a réglé la somme de <strong>${fmtMoney(total)}</strong> au titre de sa cotisation.</p>
+      <table class="table"><thead><tr><th>Date</th><th>Objet</th><th>Mode de paiement</th><th style="text-align:right">Montant</th></tr></thead><tbody>
+        ${pays.slice().sort((a, b) => a.payment_date.localeCompare(b.payment_date)).map(p => `<tr><td>${fmtDate(p.payment_date)}</td><td>${esc(p.payment_type)}</td><td>${esc(p.method || '')}</td><td style="text-align:right">${fmtMoney(p.amount)}</td></tr>`).join('')}
+        <tr><td colspan="3"><strong>Total réglé</strong></td><td style="text-align:right"><strong>${fmtMoney(total)}</strong></td></tr>
+      </tbody></table>
+      <p>Cette attestation est délivrée à l’intéressé(e) pour servir et valoir ce que de droit.</p>
+      <p style="margin-top:28px">Fait${city ? ' à ' + esc(city) : ''}, le ${today}.</p>
+      <div class="attest-sign"><div>Le/la président(e)</div><div class="sign-box">${esc(s.president_name || '')}</div></div>
+    </div>`, 'print-attest');
 }
 
 /* =====================================================================
@@ -1717,6 +1766,7 @@ function exportPdf(D) {
   const pays = D.payments.filter(p => !p.archived), exps = D.expenses.filter(e => !e.archived);
   let el = $('#print-root');
   if (!el) { el = document.createElement('div'); el.id = 'print-root'; document.body.appendChild(el); }
+  el.className = '';
   el.innerHTML = `
     <h1>${esc(S.settings?.club_name || 'Club')}</h1>
     <p class="muted">Comptabilité${D.season ? ' — saison ' + esc(D.season.label) : ''} · édité le ${new Date().toLocaleDateString('fr-FR', { day: 'numeric', month: 'long', year: 'numeric' })}</p>

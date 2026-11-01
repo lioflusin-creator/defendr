@@ -409,3 +409,16 @@ input.pt { width: 18px; height: 18px; accent-color: var(--ok); cursor: pointer; 
 .wa-preview { white-space: pre-wrap; background: #e7ffdb; color: #111b21; border-radius: 10px 10px 10px 2px; padding: 10px 12px; font-size: 14px; max-width: 420px; box-shadow: 0 1px 1px rgba(0,0,0,.08); }
 @media (prefers-color-scheme: dark) { .wa-preview { background: #005c4b; color: #e9edef; } }
 a.btn.disabled { opacity: .45; }
+
+/* ---------- Attestation ---------- */
+@media print {
+  #print-root.print-attest { font-size: 13px; line-height: 1.6; max-width: 170mm; margin: 0 auto; }
+  .attest-head { display: flex; align-items: center; gap: 14px; padding-bottom: 14px; border-bottom: 2px solid #000; margin-bottom: 28px; }
+  .attest-head .logo-mark { width: 44px; height: 44px; font-size: 24px; -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+  .attest-club { font-family: var(--display); font-weight: 800; font-size: 18px; text-transform: uppercase; }
+  .attest h1 { text-align: center; font-size: 22px; margin: 10px 0 24px !important; letter-spacing: 1px; }
+  .attest .table { margin: 16px 0; }
+  .attest-sign { margin-top: 24px; margin-left: auto; width: 240px; text-align: center; }
+  .sign-box { height: 80px; border-bottom: 1px solid #000; display: flex; align-items: flex-end; justify-content: center; padding-bottom: 4px; }
+}
+@media print { html, body { background: #fff !important; } }
