@@ -91,6 +91,13 @@ const I = {
   cake: '<path d="M4 21h16v-8a2 2 0 0 0-2-2H6a2 2 0 0 0-2 2z"/><path d="M4 16c2 0 2-1.5 4-1.5s2 1.5 4 1.5 2-1.5 4-1.5 2 1.5 4 1.5M12 11V7M12 4.5v.01"/>',
   x: '<path d="M6 6l12 12M18 6 6 18"/>',
   logout: '<path d="M15 4h4a1 1 0 0 1 1 1v14a1 1 0 0 1-1 1h-4M10 16l-4-4 4-4M6 12h10"/>',
+  left: '<path d="M15 5l-7 7 7 7"/>',
+  right: '<path d="M9 5l7 7-7 7"/>',
+  file: '<path d="M14 3H6a1 1 0 0 0-1 1v16a1 1 0 0 0 1 1h12a1 1 0 0 0 1-1V8z"/><path d="M14 3v5h5M9 13h6M9 17h6"/>',
+  copy: '<rect x="8" y="8" width="12" height="12" rx="2"/><path d="M16 8V5a1 1 0 0 0-1-1H5a1 1 0 0 0-1 1v10a1 1 0 0 0 1 1h3"/>',
+  check: '<path d="m5 12 5 5 9-10"/>',
+  clock: '<circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/>',
+  pin: '<path d="M12 21s-7-6.2-7-11.5a7 7 0 0 1 14 0C19 14.8 12 21 12 21z"/><circle cx="12" cy="9.5" r="2.5"/>',
 };
 const icon = (name) => `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${I[name] || ''}</svg>`;
 
@@ -132,7 +139,7 @@ function confirmBox(title, text, okLabel = 'Supprimer') {
 const NAV = [
   { path: '/', label: 'Tableau de bord', short: 'Accueil', icon: 'home' },
   { path: '/membres', label: 'Membres', short: 'Membres', icon: 'users' },
-  { path: '/planning', label: 'Planning', short: 'Planning', icon: 'calendar', soon: true },
+  { path: '/planning', label: 'Planning', short: 'Planning', icon: 'calendar' },
   { path: '/planification', label: 'Planification annuelle', icon: 'list', soon: true },
   { path: '/paiements', label: 'Comptabilité', short: 'Compta', icon: 'euro', admin: true, soon: true },
   { path: '/disciplines', label: 'Disciplines', icon: 'target' },
@@ -295,6 +302,7 @@ async function route() {
     if (path === '/') await viewDashboard(view);
     else if (path.startsWith('/membres/')) await viewMember(view, path.split('/')[2]);
     else if (path === '/membres') await viewMembers(view);
+    else if (path === '/planning') await viewPlanning(view);
     else if (path === '/disciplines') await viewDisciplines(view);
     else if (path === '/niveaux') await viewLevels(view);
     else if (path === '/parametres') await viewSettings(view);
@@ -514,17 +522,18 @@ async function viewMember(view, id) {
   const [mr, pr, ar] = await Promise.all([
     sb.from('members').select('*').eq('id', id).maybeSingle(),
     isAdmin() ? sb.from('payments').select('*').eq('member_id', id).order('payment_date', { ascending: false }) : null,
-    sb.from('attendances').select('present, notes, courses(title, course_date, discipline_id)').eq('member_id', id),
+    sb.from('attendances').select('course_id, present').eq('member_id', id),
   ]);
   if (mr.error) throw mr.error;
+  if (ar.error) throw ar.error;
   const m = mr.data;
   if (!m) { view.innerHTML = `<div class="empty">Membre introuvable. <a href="#/membres">Retour à la liste</a></div>`; return; }
   const pays = pr?.data || [];
   const seasonPays = season ? pays.filter(p => p.season_id === season.id) : pays;
   const paid = seasonPays.filter(p => p.status === 'payé').reduce((s, p) => s + Number(p.amount), 0);
   const due = Number(m.fee_amount || 0) - paid;
-  const att = (ar.data || []).filter(a => a.courses).sort((a, b) => b.courses.course_date.localeCompare(a.courses.course_date));
-  const present = att.filter(a => a.present).length;
+  const st = await memberAttendance(m, new Set(ar.data.filter(a => a.present).map(a => a.course_id)));
+  const att = st.sessions, present = st.present;
   const yes = b => b ? '<span class="badge ok">Oui</span>' : '<span class="badge warn">Non</span>';
   const wa = waLink(m.phone);
 
@@ -576,8 +585,9 @@ async function viewMember(view, id) {
         ${seasonPays.length ? seasonPays.map(p => `<div class="bday"><div style="flex:1"><div style="font-weight:600">${esc(p.payment_type)}</div><div class="small muted">${fmtDate(p.payment_date)}${p.method ? ' · ' + esc(p.method) : ''}${p.bank_checked ? ' · pointé' : ''}</div></div><div style="text-align:right"><div style="font-weight:700">${fmtMoney(p.amount)}</div><span class="badge ${p.status === 'payé' ? 'ok' : 'warn'}">${p.status === 'payé' ? 'Payé' : 'En attente'}</span></div></div>`).join('') : '<div class="empty">Aucun paiement enregistré.</div>'}
         <p class="small muted">L’enregistrement des paiements arrive avec la rubrique Comptabilité.</p>
       </div>` : ''}
-      <div class="card card-pad"><div class="row between"><h2 style="margin:0">Historique des cours</h2>${att.length ? `<span class="badge">${present}/${att.length} présences</span>` : ''}</div>
-        ${att.length ? `<div class="mt">${att.slice(0, 15).map(a => `<div class="bday"><div style="flex:1"><div style="font-weight:600">${esc(a.courses.title)}</div><div class="small muted">${fmtDate(a.courses.course_date)}</div></div>${a.present ? '<span class="badge ok">Présent</span>' : '<span class="badge">Absent</span>'}</div>`).join('')}</div>` : '<div class="empty">Aucun cours enregistré.</div>'}
+      <div class="card card-pad"><div class="row between"><h2 style="margin:0">Assiduité</h2>${att.length ? `<span class="badge ${st.cls}">${st.rate}% · ${st.label}</span>` : ''}</div>
+        <div class="small muted">${att.length ? `${present} présence(s) sur ${att.length} séance(s)` : 'Aucune séance'} depuis l’inscription${m.registration_date ? ' le ' + fmtDate(m.registration_date) : ''}.</div>
+        ${att.length ? `<div class="mt">${att.slice(0, 15).map(a => `<div class="bday"><div style="flex:1"><div style="font-weight:600">${esc(a.title)}</div><div class="small muted">${fmtDate(a.course_date)}</div></div>${a.present ? '<span class="badge ok">Présent</span>' : '<span class="badge">Absent</span>'}</div>`).join('')}${att.length > 15 ? `<div class="small muted mt">+ ${att.length - 15} séance(s) plus ancienne(s)</div>` : ''}</div>` : ''}
       </div>
     </div>
     <div class="mt"><button class="btn btn-danger btn-sm" id="del">${icon('trash')}Supprimer ce membre</button></div>`;
@@ -794,6 +804,283 @@ async function viewSettings(view) {
     const { error } = await sb.from('profiles').update({ role: sel.value }).eq('id', sel.dataset.role);
     if (error) return fail(error);
     toast('Rôle mis à jour');
+  });
+}
+
+/* =====================================================================
+   Planning & appel des présences
+   ===================================================================== */
+const pad2 = n => String(n).padStart(2, '0');
+const isoDay = d => `${d.getFullYear()}-${pad2(d.getMonth() + 1)}-${pad2(d.getDate())}`;
+const parseDay = s => new Date(s + 'T00:00:00');
+const addDays = (d, n) => { const x = new Date(d); x.setDate(x.getDate() + n); return x; };
+const mondayOf = d => { const x = new Date(d.getFullYear(), d.getMonth(), d.getDate()); x.setDate(x.getDate() - ((x.getDay() + 6) % 7)); return x; };
+const DAYS = ['Lun', 'Mar', 'Mer', 'Jeu', 'Ven', 'Sam', 'Dim'];
+const hhmm = t => (t || '').slice(0, 5);
+const longDay = s => parseDay(s).toLocaleDateString('fr-FR', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' });
+S.plan = { mode: window.innerWidth < 860 ? 'liste' : 'semaine', anchor: new Date() };
+
+async function fileHref(c) {
+  if (!c.file_url) return null;
+  if (!c.file_url.startsWith('storage:')) return c.file_url;
+  const { data, error } = await sb.storage.from('cours').createSignedUrl(c.file_url.slice(8), 3600);
+  return error ? null : data.signedUrl;
+}
+const safeName = n => (n || 'fichier').normalize('NFD').replace(/[̀-ͯ]/g, '').replace(/[^\w.-]+/g, '_');
+
+/* Règle d'assiduité : on ne compte que les séances passées de la saison active
+   où l'appel a été fait, et seulement à partir de la date d'inscription du membre. */
+async function seasonSessionsWithCall() {
+  const season = activeSeason();
+  let q = sb.from('courses').select('id, title, course_date, attendances(count)').lte('course_date', isoDay(new Date()));
+  if (season) q = q.eq('season_id', season.id);
+  const { data, error } = await q.order('course_date', { ascending: false });
+  if (error) throw error;
+  return data.filter(c => (c.attendances?.[0]?.count ?? 0) > 0);
+}
+function attendanceLevel(rate) {
+  const t = S.settings || {};
+  if (rate >= (t.threshold_assidu ?? 70)) return ['Assidu', 'ok'];
+  if (rate >= (t.threshold_regulier ?? 45)) return ['Régulier', 'accent'];
+  if (rate >= (t.threshold_risque ?? 25)) return ['À risque', 'warn'];
+  return ['Quasi-absent', 'danger'];
+}
+function attendanceFor(m, sessions, presentIds) {
+  // Point de départ : la date d'inscription, ou la première présence si elle est antérieure (cours d'essai)
+  const firstPresent = sessions.filter(c => presentIds.has(c.id)).map(c => c.course_date).sort()[0];
+  const start = [m.registration_date, firstPresent].filter(Boolean).sort()[0];
+  const list = sessions.filter(c => !start || c.course_date >= start)
+    .map(c => ({ ...c, present: presentIds.has(c.id) }));
+  const present = list.filter(c => c.present).length;
+  const rate = list.length ? Math.round(present / list.length * 100) : 0;
+  const [label, cls] = attendanceLevel(rate);
+  return { sessions: list, present, rate, label, cls };
+}
+async function memberAttendance(m, presentIds) {
+  return attendanceFor(m, await seasonSessionsWithCall(), presentIds);
+}
+
+/* Rapatrie une seule fois les fichiers de cours encore stockés chez Base44 */
+async function migrateBase44Files() {
+  if (!isAdmin() || S.migrating) return;
+  S.migrating = true;
+  try {
+    const { data } = await sb.from('courses').select('file_url, file_name').like('file_url', 'https://base44.app/%');
+    const urls = [...new Map((data || []).map(c => [c.file_url, c.file_name])).entries()];
+    let done = 0;
+    for (const [url, name] of urls) {
+      const res = await fetch(url);
+      if (!res.ok) continue;
+      const blob = await res.blob();
+      const path = `base44/${url.split('/').pop().split('_')[0]}-${safeName(name)}`;
+      const up = await sb.storage.from('cours').upload(path, blob, { upsert: true, contentType: blob.type || undefined });
+      if (up.error) { console.error(up.error); continue; }
+      const { error } = await sb.from('courses').update({ file_url: 'storage:' + path }).eq('file_url', url);
+      if (!error) done++;
+    }
+    if (done) toast(`${done} fichier(s) de cours rapatrié(s) depuis Base44`);
+  } catch (e) { console.error(e); }
+}
+
+async function viewPlanning(view) {
+  migrateBase44Files();
+  const P = S.plan, season = activeSeason();
+  let from, to, label;
+  if (P.mode === 'semaine') {
+    from = mondayOf(P.anchor); to = addDays(from, 6);
+    label = `Semaine du ${from.toLocaleDateString('fr-FR', { day: 'numeric', month: 'long' })}`;
+  } else if (P.mode === 'mois') {
+    const first = new Date(P.anchor.getFullYear(), P.anchor.getMonth(), 1);
+    from = mondayOf(first); to = addDays(from, 41);
+    label = first.toLocaleDateString('fr-FR', { month: 'long', year: 'numeric' });
+    label = label[0].toUpperCase() + label.slice(1);
+  } else { label = season ? `Saison ${season.label}` : 'Toutes les séances'; }
+
+  let q = sb.from('courses').select('id, title, course_date, start_time, end_time, room, discipline_id, instructor, file_url, attendances(count)');
+  if (from) q = q.gte('course_date', isoDay(from)).lte('course_date', isoDay(to));
+  else if (season) q = q.eq('season_id', season.id);
+  const { data: courses, error } = await q.order('course_date', { ascending: P.mode !== 'liste' }).order('start_time');
+  if (error) throw error;
+  const today = isoDay(new Date());
+  const count = c => c.attendances?.[0]?.count ?? 0;
+  const { data: todays } = await sb.from('courses').select('id, title').eq('course_date', today).order('start_time');
+
+  const card = c => `<button class="session" data-c="${c.id}">
+      <span class="s-time">${hhmm(c.start_time) || '—'}${c.end_time ? ' – ' + hhmm(c.end_time) : ''}</span>
+      <span class="s-title">${esc(c.title)}</span>
+      <span class="s-meta">${c.room ? esc(c.room) : ''}${count(c) ? `<span class="badge ok">${count(c)} présent${count(c) > 1 ? 's' : ''}</span>` : (c.course_date <= today ? '<span class="badge warn">Appel à faire</span>' : '')}${c.file_url ? icon('file') : ''}</span>
+    </button>`;
+
+  let body = '';
+  if (P.mode === 'semaine') {
+    body = `<div class="week">${[0, 1, 2, 3, 4, 5, 6].map(i => {
+      const d = isoDay(addDays(from, i)), list = courses.filter(c => c.course_date === d);
+      return `<div class="day ${d === today ? 'today' : ''} ${list.length ? '' : 'empty-day'}"><div class="day-head"><span>${DAYS[i]}</span><strong>${parseDay(d).getDate()}</strong></div>${list.map(card).join('')}</div>`;
+    }).join('')}</div>`;
+  } else if (P.mode === 'mois') {
+    const month = P.anchor.getMonth();
+    body = `<div class="month only-desktop">${DAYS.map(d => `<div class="m-head">${d}</div>`).join('')}${Array.from({ length: 42 }, (_, i) => {
+      const dd = addDays(from, i), d = isoDay(dd), list = courses.filter(c => c.course_date === d);
+      return `<div class="m-cell ${dd.getMonth() !== month ? 'out' : ''} ${d === today ? 'today' : ''}"><span class="m-num">${dd.getDate()}</span>${list.map(c => `<button class="m-chip ${count(c) ? 'done' : ''}" data-c="${c.id}">${hhmm(c.start_time)} ${esc(c.title)}</button>`).join('')}</div>`;
+    }).join('')}</div>
+    <div class="only-mobile">${groupByDay(courses.filter(c => parseDay(c.course_date).getMonth() === month), card)}</div>`;
+  } else {
+    const upcoming = courses.filter(c => c.course_date >= today).reverse(), past = courses.filter(c => c.course_date < today);
+    body = `${upcoming.length ? `<h2 class="section-title mt">À venir</h2>${groupByDay(upcoming, card)}` : ''}
+      ${past.length ? `<h2 class="section-title mt">Séances passées</h2>${groupByDay(past, card)}` : ''}`;
+  }
+
+  view.innerHTML = head('Planning', 'Séances et appel des présences',
+    `${todays?.length ? `<button class="btn" id="today-call">${icon('check')}Faire l’appel du jour</button>` : ''}<button class="btn btn-primary" id="new-course">${icon('plus')}Nouvelle séance</button>`) + `
+    <div class="toolbar between">
+      <div class="chips">${[['semaine', 'Semaine'], ['mois', 'Mois'], ['liste', 'Liste']].map(([k, l]) => `<button class="chip ${P.mode === k ? 'active' : ''}" data-mode="${k}">${l}</button>`).join('')}</div>
+      ${P.mode !== 'liste' ? `<div class="row"><button class="icon-btn" id="prev" aria-label="Précédent">${icon('left')}</button><button class="btn btn-sm" id="now">Aujourd’hui</button><button class="icon-btn" id="next" aria-label="Suivant">${icon('right')}</button></div>` : ''}
+    </div>
+    <h2 class="section-title">${esc(label)} <span class="muted small" style="text-transform:none;letter-spacing:0">· ${courses.length} séance(s)</span></h2>
+    ${courses.length || P.mode !== 'liste' ? body : '<div class="card empty">Aucune séance pour l’instant. Créez la première avec « Nouvelle séance ».</div>'}`;
+
+  $$('[data-mode]', view).forEach(b => b.onclick = () => { P.mode = b.dataset.mode; route(); });
+  const step = dir => { P.anchor = P.mode === 'semaine' ? addDays(P.anchor, 7 * dir) : new Date(P.anchor.getFullYear(), P.anchor.getMonth() + dir, 1); route(); };
+  $('#prev') && ($('#prev').onclick = () => step(-1));
+  $('#next') && ($('#next').onclick = () => step(1));
+  $('#now') && ($('#now').onclick = () => { P.anchor = new Date(); route(); });
+  $$('[data-c]', view).forEach(b => b.onclick = () => openSession(b.dataset.c));
+  $('#new-course').onclick = () => courseForm(null, { course_date: isoDay(P.mode === 'liste' ? new Date() : (from <= new Date() && new Date() <= addDays(to, 1) ? new Date() : from)) });
+  $('#today-call') && ($('#today-call').onclick = () => openSession(todays[0].id));
+}
+
+function groupByDay(courses, card) {
+  if (!courses.length) return '<div class="card empty">Aucune séance sur cette période.</div>';
+  const days = [...new Set(courses.map(c => c.course_date))];
+  return `<div class="day-list">${days.map(d => `<div class="dl-group"><div class="dl-date">${esc(longDay(d))}</div>${courses.filter(c => c.course_date === d).map(card).join('')}</div>`).join('')}</div>`;
+}
+
+async function openSession(id) {
+  const [cr, ar, mr] = await Promise.all([
+    sb.from('courses').select('*').eq('id', id).single(),
+    sb.from('attendances').select('member_id, present').eq('course_id', id),
+    sb.from('members').select('id, first_name, last_name, status, level_id').order('last_name'),
+  ]);
+  for (const r of [cr, ar, mr]) if (r.error) return fail(r.error);
+  const c = cr.data;
+  const present = new Set(ar.data.filter(a => a.present).map(a => a.member_id));
+  const people = mr.data.filter(m => m.status === 'actif' || present.has(m.id));
+  const href = await fileHref(c);
+
+  const row = m => `<label class="att-row ${present.has(m.id) ? 'on' : ''}" data-m="${m.id}" data-name="${esc(fullName(m).toLowerCase())}">
+      <input type="checkbox" ${present.has(m.id) ? 'checked' : ''} aria-label="${esc(fullName(m))} présent">
+      <span class="avatar">${esc(initials(m))}</span><span class="grow"><span class="att-name">${esc(fullName(m))}</span><span class="small muted">${esc(levelName(m.level_id))}</span></span>
+      <span class="att-state">${present.has(m.id) ? 'Présent' : 'Absent'}</span></label>`;
+
+  openModal({
+    title: c.title,
+    body: `
+      <div class="row wrap small muted" style="gap:14px;margin-bottom:10px">
+        <span class="row" style="gap:4px">${icon('calendar')}${esc(longDay(c.course_date))}</span>
+        ${c.start_time ? `<span class="row" style="gap:4px">${icon('clock')}${hhmm(c.start_time)}${c.end_time ? ' – ' + hhmm(c.end_time) : ''}</span>` : ''}
+        ${c.room ? `<span class="row" style="gap:4px">${icon('pin')}${esc(c.room)}</span>` : ''}
+      </div>
+      <div class="row wrap" style="gap:6px;margin-bottom:12px">
+        ${c.discipline_id ? `<span class="badge">${esc(discName(c.discipline_id))}</span>` : ''}${c.instructor ? `<span class="badge">${esc(c.instructor)}</span>` : ''}
+        ${href ? `<a class="btn btn-sm" href="${esc(href)}" target="_blank" rel="noopener">${icon('file')}${esc(c.file_name || 'Fichier du cours')}</a>` : ''}
+      </div>
+      ${c.notes ? `<p class="small" style="white-space:pre-line;margin:0 0 14px">${esc(c.notes)}</p>` : ''}
+      <div class="row between" style="margin:6px 0 10px"><h2 class="section-title" style="margin:0">Appel</h2><span class="badge ok" id="att-count"></span></div>
+      <div class="row" style="gap:8px;margin-bottom:10px">
+        <input class="input" type="search" id="att-search" placeholder="Rechercher…" aria-label="Rechercher un membre">
+        <button class="btn btn-sm" id="att-all">Tous</button><button class="btn btn-sm" id="att-none">Aucun</button>
+      </div>
+      <div class="att-list" id="att-list">${people.map(row).join('')}</div>`,
+    foot: `<button class="icon-btn" id="c-del" aria-label="Supprimer la séance" title="Supprimer">${icon('trash')}</button>
+      <button class="btn" id="c-dup">${icon('copy')}<span class="only-desktop">Dupliquer</span></button>
+      <button class="btn" id="c-edit">${icon('edit')}<span class="only-desktop">Modifier</span></button>
+      <button class="btn btn-primary" id="c-save">Enregistrer l’appel</button>`,
+    onMount: root => {
+      const list = $('#att-list', root);
+      const refresh = () => {
+        const n = $$('.att-row input:checked', list).length;
+        $('#att-count', root).textContent = `${n} présent${n > 1 ? 's' : ''} / ${people.length}`;
+        $$('.att-row', list).forEach(r => { const on = $('input', r).checked; r.classList.toggle('on', on); $('.att-state', r).textContent = on ? 'Présent' : 'Absent'; });
+      };
+      refresh();
+      list.addEventListener('change', refresh);
+      $('#att-search', root).oninput = e => { const v = e.target.value.toLowerCase(); $$('.att-row', list).forEach(r => r.style.display = r.dataset.name.includes(v) ? '' : 'none'); };
+      $('#att-all', root).onclick = () => { $$('.att-row', list).forEach(r => { if (r.style.display !== 'none') $('input', r).checked = true; }); refresh(); };
+      $('#att-none', root).onclick = () => { $$('.att-row input', list).forEach(i => i.checked = false); refresh(); };
+      $('#c-save', root).onclick = async () => {
+        const btn = $('#c-save', root); btn.disabled = true;
+        const ids = $$('.att-row', list).filter(r => $('input', r).checked).map(r => r.dataset.m);
+        let del = sb.from('attendances').delete().eq('course_id', c.id);
+        if (ids.length) del = del.not('member_id', 'in', `(${ids.join(',')})`);
+        const r1 = await del;
+        const r2 = ids.length ? await sb.from('attendances').upsert(ids.map(m => ({ course_id: c.id, member_id: m, present: true })), { onConflict: 'course_id,member_id' }) : { error: null };
+        btn.disabled = false;
+        if (r1.error || r2.error) return fail(r1.error || r2.error);
+        closeModal(); toast(`Appel enregistré : ${ids.length} présent${ids.length > 1 ? 's' : ''}`); if (currentPath() === '/planning') route();
+      };
+      $('#c-edit', root).onclick = () => courseForm(c);
+      $('#c-dup', root).onclick = () => { const { id, created_at, legacy, ...rest } = c; courseForm(null, { ...rest, course_date: isoDay(addDays(parseDay(c.course_date), 7)) }); };
+      $('#c-del', root).onclick = async () => {
+        if (!await confirmBox('Supprimer la séance', `Supprimer « ${esc(c.title)} » du ${esc(longDay(c.course_date))} ? L’appel de cette séance sera aussi supprimé.`)) return;
+        const { error } = await sb.from('courses').delete().eq('id', c.id);
+        if (error) return fail(error);
+        toast('Séance supprimée'); route();
+      };
+    },
+  });
+}
+
+function courseForm(c, defaults = {}) {
+  const v = c || { start_time: S.settings?.default_start_time, end_time: S.settings?.default_end_time, instructor: S.profile?.full_name, ...defaults };
+  const rooms = [...new Set([...(S.settings?.rooms || []), v.room].filter(Boolean))];
+  const hasFile = !!v.file_url;
+  openModal({
+    title: c ? 'Modifier la séance' : 'Nouvelle séance',
+    body: `<form id="cf" class="form-grid" novalidate>
+      <div class="field full"><label for="cf-title">Titre / thème du cours *</label><input class="input" id="cf-title" name="title" value="${esc(v.title || '')}" placeholder="ex : Défense sur saisies"></div>
+      <div class="field"><label for="cf-date">Date *</label><input class="input" id="cf-date" name="course_date" type="date" value="${esc(v.course_date || '')}"></div>
+      <div class="field"><label for="cf-room">Salle</label><select class="input" id="cf-room" name="room"><option value="">—</option>${rooms.map(r => `<option ${r === v.room ? 'selected' : ''}>${esc(r)}</option>`).join('')}</select></div>
+      <div class="field"><label for="cf-start">Début</label><input class="input" id="cf-start" name="start_time" type="time" value="${esc(hhmm(v.start_time))}"></div>
+      <div class="field"><label for="cf-end">Fin</label><input class="input" id="cf-end" name="end_time" type="time" value="${esc(hhmm(v.end_time))}"></div>
+      <div class="field"><label for="cf-disc">Discipline</label><select class="input" id="cf-disc" name="discipline_id"><option value="">—</option>${S.disciplines.filter(d => d.is_active || d.id === v.discipline_id).map(d => `<option value="${d.id}" ${d.id === v.discipline_id || (!v.discipline_id && S.disciplines.filter(x => x.is_active).length === 1 && d.is_active) ? 'selected' : ''}>${esc(d.name)}</option>`).join('')}</select></div>
+      <div class="field"><label for="cf-instr">Enseignant</label><input class="input" id="cf-instr" name="instructor" value="${esc(v.instructor || '')}"></div>
+      <div class="field full"><label for="cf-notes">Contenu / notes</label><textarea class="input" id="cf-notes" name="notes">${esc(v.notes || '')}</textarea></div>
+      <div class="field full"><label for="cf-file">Fichier du cours</label>
+        ${hasFile ? `<div class="row small" style="margin-bottom:6px">${icon('file')}<span>${esc(v.file_name || 'Fichier joint')}</span><label class="check" style="padding:0;margin-left:auto"><input type="checkbox" id="cf-rmfile"><span>Retirer</span></label></div>` : ''}
+        <input class="input" id="cf-file" type="file"><span class="help">${hasFile ? 'Choisir un fichier remplacera le fichier actuel.' : 'Plan de cours, fiche… (facultatif)'}</span></div>
+      ${c ? '' : `<div class="field full"><label for="cf-repeat">Répéter chaque semaine jusqu’au (facultatif)</label><input class="input" id="cf-repeat" type="date"><span class="help">Crée la même séance chaque semaine, même jour, jusqu’à cette date.</span></div>`}
+    </form>`,
+    foot: `<button class="btn" data-close>Annuler</button><button class="btn btn-primary" id="cf-save">Enregistrer</button>`,
+    onMount: root => $('#cf-save', root).onclick = async () => {
+      const d = readForm($('#cf', root));
+      if (!d.title || !d.course_date) return toast('Le titre et la date sont obligatoires.', 'error');
+      const btn = $('#cf-save', root); btn.disabled = true;
+      try {
+        const file = $('#cf-file', root).files[0];
+        if (file) {
+          if (file.size > 20 * 1024 * 1024) throw new Error('Fichier trop lourd (20 Mo maximum).');
+          const path = `seances/${Date.now()}-${safeName(file.name)}`;
+          const up = await sb.storage.from('cours').upload(path, file, { contentType: file.type || undefined });
+          if (up.error) throw up.error;
+          d.file_url = 'storage:' + path; d.file_name = file.name;
+        } else if ($('#cf-rmfile', root)?.checked) { d.file_url = null; d.file_name = null; }
+        else if (!c && v.file_url) { d.file_url = v.file_url; d.file_name = v.file_name; }
+        if (c) {
+          const { error } = await sb.from('courses').update(d).eq('id', c.id);
+          if (error) throw error;
+          closeModal(); toast('Séance mise à jour'); route();
+        } else {
+          const until = $('#cf-repeat', root).value;
+          const dates = [d.course_date];
+          if (until) for (let x = addDays(parseDay(d.course_date), 7); isoDay(x) <= until && dates.length < 60; x = addDays(x, 7)) dates.push(isoDay(x));
+          const rows = dates.map(dt => ({ ...d, course_date: dt, season_id: activeSeason()?.id || null }));
+          const { error } = await sb.from('courses').insert(rows);
+          if (error) throw error;
+          closeModal(); toast(rows.length > 1 ? `${rows.length} séances créées` : 'Séance créée');
+          S.plan.anchor = parseDay(d.course_date); go('/planning'); route();
+        }
+      } catch (e) { fail(e); btn.disabled = false; }
+    },
   });
 }
 
