@@ -1,0 +1,143 @@
+<!doctype html>
+<html lang="fr">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <title>Inscription au club</title>
+  <meta name="description" content="Fiche d'inscription en ligne au club de self-défense.">
+  <meta name="theme-color" content="#14181f">
+  <meta name="robots" content="noindex">
+  <link rel="icon" type="image/png" href="icons/icon-192.png">
+  <link rel="stylesheet" href="style.css">
+  <style>
+    .reg { max-width: 720px; margin: 0 auto; padding: 24px 16px 64px; }
+    .reg-head { display: flex; align-items: center; gap: 14px; margin-bottom: 18px; }
+    .reg-head h1 { font-family: var(--display); text-transform: uppercase; font-size: 26px; margin: 0; line-height: 1.1; }
+    .reg .card { margin-bottom: 16px; }
+    .req::after { content: " *"; color: var(--accent); }
+    .hp { position: absolute; left: -10000px; width: 1px; height: 1px; overflow: hidden; }
+    .choice { display: flex; gap: 8px; flex-wrap: wrap; }
+    .choice label { border: 1px solid var(--line); border-radius: 10px; padding: 8px 14px; cursor: pointer; display: flex; gap: 8px; align-items: center; }
+    .choice input { accent-color: var(--accent); }
+    [hidden] { display: none !important; }
+    .done-box { text-align: center; padding: 48px 20px; }
+  </style>
+</head>
+<body>
+  <main class="reg" id="reg">
+    <div class="reg-head"><div class="logo-mark">D</div><div><h1>Fiche d’inscription</h1><div class="muted" id="club-name">&nbsp;</div></div></div>
+
+    <form id="f" novalidate>
+      <div class="hp" aria-hidden="true"><label>Ne pas remplir <input name="website" tabindex="-1" autocomplete="off"></label></div>
+
+      <section class="card card-pad">
+        <h2>Vous</h2>
+        <div class="form-grid">
+          <div class="field"><label class="req" for="fn">Prénom</label><input class="input" id="fn" name="first_name" autocomplete="given-name" required></div>
+          <div class="field"><label class="req" for="ln">Nom</label><input class="input" id="ln" name="last_name" autocomplete="family-name" required></div>
+          <div class="field"><label class="req" for="bd">Date de naissance</label><input class="input" id="bd" name="birth_date" type="date" required></div>
+          <div class="field"><label for="ge">Genre</label><select class="input" id="ge" name="gender"><option value="">—</option><option>Femme</option><option>Homme</option><option>Autre</option></select></div>
+          <div class="field"><label class="req" for="ph">Téléphone</label><input class="input" id="ph" name="phone" type="tel" autocomplete="tel" required></div>
+          <div class="field"><label for="em">E-mail</label><input class="input" id="em" name="email" type="email" autocomplete="email"></div>
+          <div class="field full"><label for="ad">Adresse postale</label><input class="input" id="ad" name="address" autocomplete="street-address"></div>
+          <div class="field"><label for="ts">Taille de T-shirt</label><select class="input" id="ts" name="tshirt_size"><option value="">—</option><option>XS</option><option>S</option><option>M</option><option>L</option><option>XL</option><option>XXL</option><option>XXXL</option></select></div>
+          <div class="field"><label for="ft">Cotisation</label><select class="input" id="ft" name="fee_type"></select></div>
+        </div>
+      </section>
+
+      <section class="card card-pad" id="minor-block" hidden>
+        <h2>Responsable légal</h2>
+        <p class="small muted">L’adhérent(e) a moins de 18 ans : merci de compléter cette partie.</p>
+        <div class="form-grid">
+          <div class="field"><label class="req" for="gn">Nom du responsable légal</label><input class="input" id="gn" name="guardian_name"></div>
+          <div class="field"><label class="req" for="gp">Téléphone du responsable</label><input class="input" id="gp" name="guardian_phone" type="tel"></div>
+          <div class="field full"><label for="gm">E-mail du responsable</label><input class="input" id="gm" name="guardian_email" type="email"></div>
+          <div class="field full"><label for="pk">Personnes autorisées à récupérer l’enfant</label><input class="input" id="pk" name="pickup_persons"></div>
+          <label class="check full"><input type="checkbox" name="parental_authorization"><span>J’autorise mon enfant à pratiquer la self-défense au sein du club et je certifie être son responsable légal.</span></label>
+        </div>
+      </section>
+
+      <section class="card card-pad">
+        <h2>En cas d’urgence</h2>
+        <div class="form-grid">
+          <div class="field"><label class="req" for="ec">Personne à prévenir</label><input class="input" id="ec" name="emergency_contact" placeholder="ex : Marie (épouse)" required></div>
+          <div class="field"><label class="req" for="ep">Téléphone</label><input class="input" id="ep" name="emergency_phone" type="tel" required></div>
+          <div class="field full"><label for="mn">Information médicale utile à l’encadrant (facultatif)</label><input class="input" id="mn" name="medical_notes" placeholder="ex : asthme, blessure récente…"><span class="help">N’indiquez que ce qui est utile pour votre sécurité pendant les cours.</span></div>
+        </div>
+        <p class="small muted">Le certificat médical ou le questionnaire de santé est à remettre en main propre à l’encadrant.</p>
+      </section>
+
+      <section class="card card-pad">
+        <h2>Votre parcours</h2>
+        <div class="field"><label for="hf">Comment avez-vous connu le club ?</label><select class="input" id="hf" name="how_found"><option value="">—</option><option>Bouche à oreille</option><option>Réseaux sociaux</option><option>Forum des associations</option><option>Affiche / flyer</option><option>Internet</option><option>Autre</option></select></div>
+        <label class="check"><input type="checkbox" name="other_defense_sport" id="os"><span>J’ai déjà pratiqué un sport de combat ou de défense</span></label>
+        <div class="field" id="od-f" hidden><label for="od">Lequel, et combien de temps ?</label><input class="input" id="od" name="other_defense_sport_details"></div>
+      </section>
+
+      <section class="card card-pad">
+        <h2>Consentements</h2>
+        <div class="field"><label>Droit à l’image (photos et vidéos du club)</label>
+          <div class="choice"><label><input type="radio" name="consent_image" value="oui" required>J’accepte</label><label><input type="radio" name="consent_image" value="non">Je refuse</label></div></div>
+        <label class="check"><input type="checkbox" name="consent_data" required><span>J’accepte que mes données soient utilisées par le club pour la gestion de mon adhésion. <span class="req"></span></span></label>
+        <label class="check"><input type="checkbox" name="rules_accepted" required><span>J’ai lu et j’accepte sans réserve le règlement intérieur du club. <span class="req"></span></span></label>
+        <label class="check"><input type="checkbox" name="insurance_informed" required><span>J’ai pris connaissance de la possibilité de souscrire une assurance complémentaire. <span class="req"></span></span></label>
+        <p class="small muted mt">Vos données sont uniquement accessibles aux responsables du club, hébergées en France, et ne sont jamais transmises à des tiers. Vous pouvez demander à les consulter, les corriger ou les supprimer à tout moment auprès du club.</p>
+      </section>
+
+      <div id="msg"></div>
+      <button class="btn btn-primary btn-block" type="submit" id="send">Envoyer ma fiche d’inscription</button>
+    </form>
+  </main>
+
+  <script type="module">
+    import { createClient } from 'https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/+esm';
+    import { SUPABASE_URL, SUPABASE_ANON_KEY } from './config.js';
+    const sb = createClient(SUPABASE_URL, SUPABASE_ANON_KEY, { auth: { persistSession: false } });
+    const $ = s => document.querySelector(s);
+    const esc = v => String(v ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+    const money = n => n == null ? '' : ' — ' + Number(n).toLocaleString('fr-FR', { style: 'currency', currency: 'EUR', maximumFractionDigits: 0 });
+
+    let club = {};
+    try { const { data } = await sb.rpc('public_club_info'); club = data || {}; } catch {}
+    $('#club-name').textContent = club.club_name || '';
+    if (club.club_name) document.title = 'Inscription — ' + club.club_name;
+    $('#ft').innerHTML = '<option value="">—</option>' + [['Nouvel adhérent(e)', club.fee_new], ['Ancien(ne) adhérent(e)', club.fee_returning], ['Demandeur(se) d’emploi', club.fee_jobseeker], ['Étudiant(e)', club.fee_student]]
+      .map(([l, a]) => `<option value="${esc(l)}">${esc(l)}${money(a)}</option>`).join('');
+
+    const age = d => { if (!d) return null; const b = new Date(d + 'T00:00:00'), n = new Date(); let a = n.getFullYear() - b.getFullYear(); if (n < new Date(n.getFullYear(), b.getMonth(), b.getDate())) a--; return a; };
+    const isMinor = () => (age($('#bd').value) ?? 99) < 18;
+    $('#bd').addEventListener('change', () => { $('#minor-block').hidden = !isMinor(); });
+    $('#os').addEventListener('change', e => { $('#od-f').hidden = !e.target.checked; });
+
+    $('#f').addEventListener('submit', async e => {
+      e.preventDefault();
+      const f = e.target, msg = $('#msg');
+      if (f.website.value) return; // robot
+      const d = {};
+      for (const el of f.elements) {
+        if (!el.name || el.name === 'website') continue;
+        if (el.type === 'checkbox') d[el.name] = el.checked;
+        else if (el.type === 'radio') { if (el.checked) d[el.name] = el.value; }
+        else d[el.name] = el.value.trim() || null;
+      }
+      const missing = [];
+      if (!d.first_name) missing.push('prénom'); if (!d.last_name) missing.push('nom'); if (!d.birth_date) missing.push('date de naissance');
+      if (!d.phone) missing.push('téléphone'); if (!d.emergency_contact || !d.emergency_phone) missing.push('contact d’urgence');
+      if (!d.consent_image) missing.push('droit à l’image');
+      if (!d.consent_data || !d.rules_accepted || !d.insurance_informed) missing.push('les cases de consentement obligatoires');
+      if (isMinor() && (!d.guardian_name || !d.guardian_phone)) missing.push('responsable légal');
+      if (missing.length) { msg.innerHTML = `<div class="alert error">Merci de compléter : ${esc(missing.join(', '))}.</div>`; msg.scrollIntoView({ block: 'center' }); return; }
+      d.consent_image = d.consent_image === 'oui';
+      d.rules_read = d.rules_accepted;
+      if (!isMinor()) { delete d.guardian_name; delete d.guardian_phone; delete d.guardian_email; delete d.pickup_persons; delete d.parental_authorization; }
+      const btn = $('#send'); btn.disabled = true; btn.textContent = 'Envoi…';
+      const { error } = await sb.from('registrations').insert({ data: d });
+      if (error) { btn.disabled = false; btn.textContent = 'Envoyer ma fiche d’inscription'; msg.innerHTML = `<div class="alert error">L’envoi n’a pas fonctionné. Vérifiez votre connexion et réessayez.</div>`; return; }
+      $('#reg').innerHTML = `<div class="card done-box"><div class="logo-mark" style="margin:0 auto 16px">✓</div><h1 style="font-family:var(--display);text-transform:uppercase">Merci ${esc(d.first_name)} !</h1>
+        <p>Votre fiche d’inscription a bien été envoyée${club.club_name ? ' au ' + esc(club.club_name) : ''}.</p>
+        <p class="muted">Pensez à apporter votre certificat médical (ou questionnaire de santé) et votre règlement au prochain cours. À très vite sur le tatami ! 👊</p></div>`;
+      window.scrollTo(0, 0);
+    });
+  </script>
+</body>
+</html>

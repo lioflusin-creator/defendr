@@ -411,6 +411,7 @@ async function viewDashboard(view) {
   }
 
   view.innerHTML = head('Tableau de bord', `Vue d'ensemble de votre club${season ? ' · saison ' + esc(season.label) : ''}`) + `
+    <div id="dash-regs"></div>
     ${isAdmin() && (!lastBackup() || Date.now() - new Date(lastBackup()) > 31 * 86400000) ? `<div class="alert info">Pensez à télécharger une sauvegarde de vos données : <a href="#/parametres">Paramètres → Sauvegarde</a>.</div>` : ''}
     ${!season && isAdmin() ? `<div class="alert info">Aucune saison active. <a href="#/parametres">Créez la saison en cours dans les Paramètres</a> pour suivre la comptabilité par saison.</div>` : ''}
     <div class="grid stats mb">
@@ -437,6 +438,10 @@ async function viewDashboard(view) {
       ${lastPays}
     </div>`;
   $$('[data-filter]', view).forEach(a => a.onclick = () => { S.memberFilter = a.dataset.filter; });
+  sb.from('registrations').select('id', { count: 'exact', head: true }).eq('status', 'nouvelle').then(({ count }) => {
+    if (count && $('#dash-regs')) $('#dash-regs').innerHTML = `<div class="alert info row between wrap" style="gap:8px"><span><strong>${count} nouvelle${count > 1 ? 's' : ''} demande${count > 1 ? 's' : ''} d’inscription</strong> en ligne.</span><button class="btn btn-sm btn-primary" id="dash-open-regs">Voir</button></div>`;
+    $('#dash-open-regs') && ($('#dash-open-regs').onclick = openRegistrations);
+  });
   $$('[data-deposit]', view).forEach(b => b.onclick = async () => {
     b.disabled = true;
     const { error } = await sb.from('payments').update({ bank_checked: true }).eq('id', b.dataset.deposit);
@@ -474,6 +479,7 @@ async function viewMembers(view) {
 
   view.innerHTML = head('Membres', `${members.filter(m => m.status === 'actif').length} membres actifs · ${members.length} inscrits`,
     `<button class="btn btn-primary" id="new-member">${icon('plus')}Nouveau membre</button>`) + `
+    <div id="reg-banner"></div>
     <div class="toolbar">
       <input class="input" type="search" id="m-search" placeholder="Rechercher un membre…" value="${esc(S.memberSearch)}" aria-label="Rechercher un membre">
       <div class="chips">${filters.map(f => `<button class="chip ${S.memberFilter === f.k ? 'active' : ''}" data-f="${f.k}">${esc(f.label)} <span class="n">${members.filter(f.fn).length}</span></button>`).join('')}</div>
@@ -509,6 +515,11 @@ async function viewMembers(view) {
   $('#m-search').oninput = e => { S.memberSearch = e.target.value; draw(); };
   $$('[data-f]', view).forEach(b => b.onclick = () => { S.memberFilter = b.dataset.f; $$('[data-f]', view).forEach(x => x.classList.toggle('active', x === b)); draw(); });
   $('#new-member').onclick = () => memberForm(null, id => go('/membres/' + id));
+  sb.from('registrations').select('id', { count: 'exact', head: true }).eq('status', 'nouvelle').then(({ count }) => {
+    if (!count || !$('#reg-banner')) return;
+    $('#reg-banner').innerHTML = `<div class="alert info row between wrap" style="gap:8px"><span><strong>${count} demande${count > 1 ? 's' : ''} d’inscription en ligne</strong> à traiter.</span><button class="btn btn-sm btn-primary" id="open-regs">Voir</button></div>`;
+    $('#open-regs').onclick = openRegistrations;
+  });
 }
 
 function feeOptions() {
@@ -849,8 +860,16 @@ async function viewSettings(view) {
         <div class="small mb">${lastBackupText()}</div>
         <button class="btn btn-primary" id="backup">${icon('file')}Télécharger une sauvegarde</button>
       </div>
+
+      <div class="card card-pad">
+        <h2>Inscription en ligne</h2>
+        <p class="small muted">Envoyez ce lien aux personnes qui veulent s’inscrire : elles remplissent leur fiche elles-mêmes, et la demande arrive dans la page Membres, à valider.</p>
+        <div class="row" style="gap:8px"><input class="input" id="reg-url" readonly value="${esc(registrationUrl())}" aria-label="Lien d’inscription"><button class="btn" id="reg-copy">${icon('copy')}</button></div>
+        <div class="row wrap mt" style="gap:8px"><a class="btn btn-sm" href="${esc(waUrl(null, `Pour t’inscrire au ${S.settings?.club_name || 'club'}, remplis ta fiche ici : ${registrationUrl()}`))}" target="_blank" rel="noopener">${icon('chat')}Partager sur WhatsApp</a><a class="btn btn-sm" href="${esc(registrationUrl())}" target="_blank" rel="noopener">Voir la page</a></div>
+      </div>
     </div>`;
   $('#backup').onclick = () => downloadBackup($('#backup'));
+  $('#reg-copy').onclick = async () => { try { await navigator.clipboard.writeText(registrationUrl()); toast('Lien copié'); } catch { $('#reg-url').select(); toast('Sélectionnez le lien pour le copier', 'error'); } };
 
   const save = async (data, msg = 'Paramètres enregistrés') => {
     const { error } = await sb.from('club_settings').update(data).eq('id', 1);
@@ -1228,6 +1247,56 @@ async function courseForm(c, defaults = {}) {
         }
       } catch (e) { fail(e); btn.disabled = false; }
     };
+    },
+  });
+}
+
+/* =====================================================================
+   Inscriptions en ligne
+   ===================================================================== */
+const registrationUrl = () => location.origin + location.pathname.replace(/[^/]*$/, '') + 'inscription.html';
+
+async function openRegistrations() {
+  const { data, error } = await sb.from('registrations').select('*').eq('status', 'nouvelle').order('created_at');
+  if (error) return fail(error);
+  const yes = b => b ? 'Oui' : 'Non';
+  openModal({
+    title: 'Inscriptions en ligne',
+    body: data.length ? data.map(r => { const d = r.data || {}; const minor = (ageOf(d.birth_date) ?? 99) < 18; return `
+      <div class="card card-pad mb reg-card" data-r="${r.id}">
+        <div class="row between wrap"><div><strong style="font-size:16px">${esc(d.first_name)} ${esc(d.last_name)}</strong><div class="small muted">Reçue le ${fmtDate(r.created_at.slice(0, 10))}${d.birth_date ? ` · ${ageOf(d.birth_date)} ans` : ''}${minor ? ' · <span class="badge warn">Mineur</span>' : ''}</div></div>
+          ${isAdmin() ? `<div class="row" style="gap:6px"><button class="btn btn-sm" data-refuse="${r.id}">Refuser</button><button class="btn btn-sm btn-primary" data-accept="${r.id}">${icon('check')}Créer la fiche</button></div>` : ''}</div>
+        <dl class="kv small mt">
+          <dt>Téléphone</dt><dd>${esc(d.phone || '—')}</dd><dt>E-mail</dt><dd>${esc(d.email || '—')}</dd>
+          <dt>Adresse</dt><dd>${esc(d.address || '—')}</dd><dt>Cotisation</dt><dd>${esc(d.fee_type || '—')}</dd>
+          <dt>Urgence</dt><dd>${esc(d.emergency_contact || '—')} · ${esc(d.emergency_phone || '')}</dd>
+          ${minor ? `<dt>Responsable légal</dt><dd>${esc(d.guardian_name || '—')} · ${esc(d.guardian_phone || '')}</dd><dt>Autorisation parentale</dt><dd>${yes(d.parental_authorization)}</dd>` : ''}
+          ${d.medical_notes ? `<dt>Info médicale</dt><dd>${esc(d.medical_notes)}</dd>` : ''}
+          <dt>Droit à l’image</dt><dd>${yes(d.consent_image)}</dd><dt>Connu par</dt><dd>${esc(d.how_found || '—')}</dd>
+        </dl></div>`; }).join('') : '<div class="empty">Aucune demande en attente.</div>',
+    foot: `<button class="btn" data-close>Fermer</button>`,
+    onMount: root => {
+      $$('[data-accept]', root).forEach(b => b.onclick = async () => {
+        const r = data.find(x => x.id === b.dataset.accept), d = r.data || {};
+        const allowed = ['first_name', 'last_name', 'email', 'phone', 'address', 'birth_date', 'gender', 'tshirt_size', 'fee_type', 'emergency_contact', 'emergency_phone', 'how_found', 'other_defense_sport', 'other_defense_sport_details', 'consent_image', 'consent_data', 'rules_read', 'rules_accepted', 'insurance_informed', 'medical_notes', 'guardian_name', 'guardian_phone', 'guardian_email', 'parental_authorization', 'pickup_persons'];
+        const member = Object.fromEntries(allowed.filter(k => d[k] !== undefined).map(k => [k, d[k]]));
+        const fee = feeOptions().find(([l]) => l === d.fee_type);
+        const disc = S.disciplines.filter(x => x.is_active);
+        const firstLevel = S.levels.filter(l => l.is_active).sort((a, b) => a.rank - b.rank)[0];
+        Object.assign(member, { status: 'actif', member_role: 'membre', registration_date: isoDay(new Date()), fee_amount: fee?.[1] ?? null, discipline_id: disc.length === 1 ? disc[0].id : null, level_id: firstLevel?.id || null });
+        b.disabled = true;
+        const { data: created, error } = await sb.from('members').insert(member).select('id').single();
+        if (error) { b.disabled = false; return fail(error); }
+        await sb.from('registrations').delete().eq('id', r.id); // la fiche membre remplace la demande
+        closeModal(); toast(`Fiche de ${d.first_name} créée`); go('/membres/' + created.id);
+      });
+      $$('[data-refuse]', root).forEach(b => b.onclick = async () => {
+        const r = data.find(x => x.id === b.dataset.refuse);
+        if (!await confirmBox('Refuser la demande', `Refuser et supprimer la demande de ${esc(r.data?.first_name || '')} ${esc(r.data?.last_name || '')} ? Ses informations seront effacées.`, 'Refuser')) return;
+        const { error } = await sb.from('registrations').delete().eq('id', r.id);
+        if (error) return fail(error);
+        toast('Demande refusée et supprimée'); route();
+      });
     },
   });
 }
