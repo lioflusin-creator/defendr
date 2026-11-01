@@ -1335,6 +1335,34 @@ function printAttestation(m, pays, season) {
     </div>`, 'print-attest');
 }
 
+async function printAgReport({ sessions, rows, avgPresent, avgRate, cats }) {
+  const season = activeSeason(), s = S.settings || {};
+  const [{ data: all, error }, D] = await Promise.all([sb.from('members').select('*'), loadAccounting()]);
+  if (error) throw error;
+  const active = all.filter(m => m.status === 'actif');
+  const count = fn => active.filter(fn).length;
+  const pct = n => active.length ? Math.round(n / active.length * 100) + ' %' : '—';
+  const ages = active.map(m => ageOf(m.birth_date));
+  const bands = [['Moins de 18 ans', a => a < 18], ['18 – 25 ans', a => a >= 18 && a <= 25], ['26 – 40 ans', a => a >= 26 && a <= 40], ['41 – 60 ans', a => a >= 41 && a <= 60], ['Plus de 60 ans', a => a > 60]];
+  const known = ages.filter(a => a != null);
+  const avgAge = known.length ? Math.round(known.reduce((x, y) => x + y, 0) / known.length) : null;
+  const newOnes = count(m => /nouv/i.test(m.fee_type || ''));
+  const t = (title, rowsHtml) => `<h2 class="section-title mt">${title}</h2><table class="table"><tbody>${rowsHtml}</tbody></table>`;
+  const tr = (k, v, p = '') => `<tr><td>${k}</td><td style="text-align:right"><strong>${v}</strong></td><td style="text-align:right;width:70px" class="muted">${p}</td></tr>`;
+  printDoc(`
+    <h1>${esc(s.club_name || 'Club')}</h1>
+    <p class="muted">Rapport d’activité${season ? ' — saison ' + esc(season.label) : ''} · arrêté au ${new Date().toLocaleDateString('fr-FR', { day: 'numeric', month: 'long', year: 'numeric' })}${s.club_legal_id ? ' · ' + esc(s.club_legal_id) : ''}</p>
+    ${t('Effectifs', tr('Adhérents actifs', active.length) + tr('dont nouveaux adhérents', newOnes, pct(newOnes)) + tr('dont anciens adhérents', active.length - newOnes, pct(active.length - newOnes)) + tr('Femmes', count(m => m.gender === 'Femme'), pct(count(m => m.gender === 'Femme'))) + tr('Hommes', count(m => m.gender === 'Homme'), pct(count(m => m.gender === 'Homme'))) + (count(m => !m.gender) ? tr('Genre non renseigné', count(m => !m.gender), pct(count(m => !m.gender))) : ''))}
+    <div class="grid two">
+      <div>${t('Âges', bands.map(([k, f]) => tr(k, ages.filter(a => a != null && f(a)).length, pct(ages.filter(a => a != null && f(a)).length))).join('') + (ages.some(a => a == null) ? tr('Âge non renseigné', ages.filter(a => a == null).length) : '') + (avgAge != null ? tr('Âge moyen', avgAge + ' ans') : ''))}</div>
+      <div>${t('Disciplines et niveaux', S.disciplines.filter(d => count(m => m.discipline_id === d.id)).map(d => tr(esc(d.name), count(m => m.discipline_id === d.id), pct(count(m => m.discipline_id === d.id)))).join('') + S.levels.filter(l => count(m => m.level_id === l.id)).map(l => tr('Niveau ' + esc(l.name), count(m => m.level_id === l.id), pct(count(m => m.level_id === l.id)))).join(''))}</div>
+    </div>
+    ${t('Activité', tr('Séances avec appel', sessions.length) + tr('Présents par séance (moyenne)', avgPresent.toLocaleString('fr-FR', { maximumFractionDigits: 1 })) + tr('Taux de présence moyen', avgRate + ' %') + cats.map(c => tr('Adhérents « ' + c.k + ' »', rows.filter(r => r.sessions.length && r.label === c.k).length)).join(''))}
+    <h2 class="section-title mt">Bilan financier</h2>
+    ${bilanHtml(D)}
+  `);
+}
+
 /* =====================================================================
    Sauvegarde Excel
    ===================================================================== */
@@ -1607,7 +1635,8 @@ async function viewStats(view) {
   const avgPresent = perSession.length ? (perSession.reduce((s, x) => s + x.n, 0) / perSession.length) : 0;
   const maxN = Math.max(1, ...perSession.map(x => x.n));
 
-  view.innerHTML = head('Statistiques', `Assiduité de la saison${activeSeason() ? ' ' + esc(activeSeason().label) : ''}, calculée pour chaque adhérent depuis son inscription`) + `
+  view.innerHTML = head('Statistiques', `Assiduité de la saison${activeSeason() ? ' ' + esc(activeSeason().label) : ''}, calculée pour chaque adhérent depuis son inscription`,
+    isAdmin() ? `<button class="btn" id="ag-report">${icon('file')}Rapport pour l’AG</button>` : '') + `
     <div class="grid stats mb">
       ${cats.map(c => { const n = withSessions.filter(r => r.label === c.k).length; return `<button class="card stat stat-btn ${S.stats.filter === c.k ? 'sel' : ''}" data-cat="${c.k}"><div class="label"><span class="dot ${c.cls}"></span>${c.k}</div><div class="value">${n}</div><div class="hint">adhérent(s) · ${c.hint}</div></button>`; }).join('')}
     </div>
@@ -1639,6 +1668,11 @@ async function viewStats(view) {
       <div class="right"><strong style="font-size:18px">${r.sessions.length ? r.rate + ' %' : '—'}</strong>${r.sessions.length ? `<span class="badge ${r.cls}">${r.label}</span>` : '<span class="badge">Nouveau</span>'}</div>
     </a>`).join('') : '<div class="empty">Aucun adhérent dans cette catégorie.</div>';
 
+  $('#ag-report') && ($('#ag-report').onclick = async () => {
+    const btn = $('#ag-report'); btn.disabled = true;
+    try { await printAgReport({ sessions, rows, avgPresent, avgRate, cats }); } catch (e) { fail(e); }
+    btn.disabled = false;
+  });
   $$('[data-cat]', view).forEach(b => b.onclick = () => { S.stats.filter = S.stats.filter === b.dataset.cat ? 'tous' : b.dataset.cat; route(); });
   $$('[data-sort]', view).forEach(b => b.onclick = () => { S.stats.sort = b.dataset.sort; route(); });
   $('#clear-f') && ($('#clear-f').onclick = () => { S.stats.filter = 'tous'; route(); });
