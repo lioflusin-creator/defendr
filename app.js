@@ -1055,13 +1055,15 @@ function groupByDay(courses, card) {
 }
 
 async function openSession(id) {
-  const [cr, ar, mr] = await Promise.all([
+  const [cr, ar, mr, lr] = await Promise.all([
     sb.from('courses').select('*').eq('id', id).single(),
     sb.from('attendances').select('member_id, present').eq('course_id', id),
     sb.from('members').select('id, first_name, last_name, status, level_id').order('last_name'),
+    sb.from('course_plan_items').select('plan_item_id, plan_items(id, label, category, done)').eq('course_id', id),
   ]);
-  for (const r of [cr, ar, mr]) if (r.error) return fail(r.error);
+  for (const r of [cr, ar, mr, lr]) if (r.error) return fail(r.error);
   const c = cr.data;
+  const linked = lr.data.map(l => l.plan_items).filter(Boolean);
   const present = new Set(ar.data.filter(a => a.present).map(a => a.member_id));
   const people = mr.data.filter(m => m.status === 'actif' || present.has(m.id));
   const href = await fileHref(c);
@@ -1084,6 +1086,7 @@ async function openSession(id) {
         ${href ? `<a class="btn btn-sm" href="${esc(href)}" target="_blank" rel="noopener">${icon('file')}${esc(c.file_name || 'Fichier du cours')}</a>` : ''}
       </div>
       ${c.notes ? `<p class="small" style="white-space:pre-line;margin:0 0 14px">${esc(c.notes)}</p>` : ''}
+      ${linked.length ? `<div class="linked-plan"><div class="small muted" style="font-weight:700;margin-bottom:4px">Programme travaillé${linked.some(i => !i.done) ? ' · sera coché à l’enregistrement de l’appel' : ''}</div>${linked.map(i => `<div class="row small" style="gap:6px;align-items:flex-start">${i.done ? `<span style="color:var(--ok)">${icon('check')}</span>` : '<span class="dot"></span>'}<span>${esc(i.label)} <span class="muted">· ${esc(i.category)}</span></span></div>`).join('')}</div>` : ''}
       <div class="row between" style="margin:6px 0 10px"><h2 class="section-title" style="margin:0">Appel</h2><span class="badge ok" id="att-count"></span></div>
       <div class="row" style="gap:8px;margin-bottom:10px">
         <input class="input" type="search" id="att-search" placeholder="Rechercher…" aria-label="Rechercher un membre">
@@ -1115,7 +1118,13 @@ async function openSession(id) {
         const r2 = ids.length ? await sb.from('attendances').upsert(ids.map(m => ({ course_id: c.id, member_id: m, present: true })), { onConflict: 'course_id,member_id' }) : { error: null };
         btn.disabled = false;
         if (r1.error || r2.error) return fail(r1.error || r2.error);
-        closeModal(); toast(`Appel enregistré : ${ids.length} présent${ids.length > 1 ? 's' : ''}`); if (currentPath() === '/planning') route();
+        let extra = '';
+        const todo = linked.filter(i => !i.done).map(i => i.id);
+        if (ids.length && todo.length) {
+          const { error } = await sb.from('plan_items').update({ done: true }).in('id', todo);
+          if (!error) extra = ` · ${todo.length} élément(s) du programme coché(s)`;
+        }
+        closeModal(); toast(`Appel enregistré : ${ids.length} présent${ids.length > 1 ? 's' : ''}${extra}`); if (currentPath() === '/planning') route();
       };
       $('#c-edit', root).onclick = () => courseForm(c);
       $('#c-dup', root).onclick = () => { const { id, created_at, legacy, ...rest } = c; courseForm(null, { ...rest, course_date: isoDay(addDays(parseDay(c.course_date), 7)) }); };
@@ -1129,10 +1138,24 @@ async function openSession(id) {
   });
 }
 
-function courseForm(c, defaults = {}) {
+async function courseForm(c, defaults = {}) {
   const v = c || { start_time: S.settings?.default_start_time, end_time: S.settings?.default_end_time, instructor: S.profile?.full_name, ...defaults };
   const rooms = [...new Set([...(S.settings?.rooms || []), v.room].filter(Boolean))];
   const hasFile = !!v.file_url;
+  const season = activeSeason();
+  const [pr, lr] = await Promise.all([
+    season ? sb.from('plan_items').select('id, month, category, label, done, position').eq('season_id', season.id).order('position') : { data: [] },
+    c ? sb.from('course_plan_items').select('plan_item_id').eq('course_id', c.id) : { data: [] },
+  ]);
+  if (pr.error || lr.error) return fail(pr.error || lr.error);
+  const planItems = pr.data, chosen = new Set(lr.data.map(l => l.plan_item_id));
+  const planBlock = date => {
+    if (!planItems.length) return '<span class="help">Aucun programme pour cette saison.</span>';
+    const month = date ? parseDay(date).getMonth() + 1 : new Date().getMonth() + 1;
+    const its = planItems.filter(i => i.month === month || chosen.has(i.id));
+    if (!its.length) return `<span class="help">Rien de prévu au programme de ${MONTHS[month - 1]}.</span>`;
+    return [...new Set(its.map(i => i.category))].map(cat => `<div class="small muted" style="font-weight:700;margin:8px 0 2px">${esc(cat)}</div>${its.filter(i => i.category === cat).map(i => `<label class="check" style="padding:4px 0"><input type="checkbox" class="cf-plan" value="${i.id}" ${chosen.has(i.id) ? 'checked' : ''}><span>${esc(i.label)}${i.done ? ' <span class="badge ok">déjà fait</span>' : ''}</span></label>`).join('')}`).join('');
+  };
   openModal({
     title: c ? 'Modifier la séance' : 'Nouvelle séance',
     body: `<form id="cf" class="form-grid" novalidate>
@@ -1148,9 +1171,24 @@ function courseForm(c, defaults = {}) {
         ${hasFile ? `<div class="row small" style="margin-bottom:6px">${icon('file')}<span>${esc(v.file_name || 'Fichier joint')}</span><label class="check" style="padding:0;margin-left:auto"><input type="checkbox" id="cf-rmfile"><span>Retirer</span></label></div>` : ''}
         <input class="input" id="cf-file" type="file"><span class="help">${hasFile ? 'Choisir un fichier remplacera le fichier actuel.' : 'Plan de cours, fiche… (facultatif)'}</span></div>
       ${c ? '' : `<div class="field full"><label for="cf-repeat">Répéter chaque semaine jusqu’au (facultatif)</label><input class="input" id="cf-repeat" type="date"><span class="help">Crée la même séance chaque semaine, même jour, jusqu’à cette date.</span></div>`}
+      <div class="field full"><label>Programme travaillé (planification annuelle)</label><div class="cf-plan-box" id="cf-plan">${planBlock(v.course_date)}</div>
+        <span class="help">Les éléments choisis seront cochés automatiquement dans la planification quand vous ferez l’appel.</span></div>
     </form>`,
     foot: `<button class="btn" data-close>Annuler</button><button class="btn btn-primary" id="cf-save">Enregistrer</button>`,
-    onMount: root => $('#cf-save', root).onclick = async () => {
+    onMount: root => {
+    const box = $('#cf-plan', root);
+    box.addEventListener('change', e => { if (e.target.classList.contains('cf-plan')) e.target.checked ? chosen.add(e.target.value) : chosen.delete(e.target.value); });
+    $('#cf-date', root).addEventListener('change', e => { box.innerHTML = planBlock(e.target.value); });
+    const syncPlan = async courseIds => {
+      const ids = [...chosen];
+      for (const cid of courseIds) {
+        let del = sb.from('course_plan_items').delete().eq('course_id', cid);
+        if (ids.length) del = del.not('plan_item_id', 'in', `(${ids.join(',')})`);
+        const r1 = await del; if (r1.error) throw r1.error;
+        if (ids.length) { const r2 = await sb.from('course_plan_items').upsert(ids.map(p => ({ course_id: cid, plan_item_id: p })), { onConflict: 'course_id,plan_item_id' }); if (r2.error) throw r2.error; }
+      }
+    };
+    $('#cf-save', root).onclick = async () => {
       const d = readForm($('#cf', root));
       if (!d.title || !d.course_date) return toast('Le titre et la date sont obligatoires.', 'error');
       const btn = $('#cf-save', root); btn.disabled = true;
@@ -1167,18 +1205,21 @@ function courseForm(c, defaults = {}) {
         if (c) {
           const { error } = await sb.from('courses').update(d).eq('id', c.id);
           if (error) throw error;
+          await syncPlan([c.id]);
           closeModal(); toast('Séance mise à jour'); route();
         } else {
           const until = $('#cf-repeat', root).value;
           const dates = [d.course_date];
           if (until) for (let x = addDays(parseDay(d.course_date), 7); isoDay(x) <= until && dates.length < 60; x = addDays(x, 7)) dates.push(isoDay(x));
           const rows = dates.map(dt => ({ ...d, course_date: dt, season_id: activeSeason()?.id || null }));
-          const { error } = await sb.from('courses').insert(rows);
+          const { data: created, error } = await sb.from('courses').insert(rows).select('id');
           if (error) throw error;
+          if (chosen.size && created?.length) await syncPlan([created[0].id]);
           closeModal(); toast(rows.length > 1 ? `${rows.length} séances créées` : 'Séance créée');
           S.plan.anchor = parseDay(d.course_date); go('/planning'); route();
         }
       } catch (e) { fail(e); btn.disabled = false; }
+    };
     },
   });
 }
@@ -1364,8 +1405,13 @@ S.planMonth = new Date().getMonth() + 1;
 async function viewPlan(view) {
   const season = activeSeason();
   if (!season) { view.innerHTML = head('Planification annuelle') + `<div class="card empty">Aucune saison active. ${isAdmin() ? '<a href="#/parametres">Créez la saison en cours dans les Paramètres.</a>' : ''}</div>`; return; }
-  const { data: items, error } = await sb.from('plan_items').select('*').eq('season_id', season.id).order('position');
+  const [{ data: items, error }, lk] = await Promise.all([
+    sb.from('plan_items').select('*').eq('season_id', season.id).order('position'),
+    sb.from('course_plan_items').select('plan_item_id, courses(course_date)'),
+  ]);
   if (error) throw error;
+  const workedOn = {};
+  (lk.data || []).forEach(l => { if (l.courses) (workedOn[l.plan_item_id] ||= []).push(l.courses.course_date); });
   const month = S.planMonth, monthName = m => MONTHS[m - 1][0].toUpperCase() + MONTHS[m - 1].slice(1);
   const ofMonth = items.filter(i => i.month === month);
   const done = ofMonth.filter(i => i.done).length;
@@ -1392,7 +1438,7 @@ async function viewPlan(view) {
         <div class="plan-list mt">${its.map((i, idx) => `
           <div class="plan-item ${i.done ? 'done' : ''}" data-id="${i.id}">
             <input type="checkbox" class="pi-check" ${i.done ? 'checked' : ''} aria-label="Fait : ${esc(i.label)}">
-            <span class="pi-label">${esc(i.label)}</span>
+            <span class="pi-label">${esc(i.label)}${workedOn[i.id] ? `<span class="small muted" style="display:block;text-decoration:none">Travaillé le ${workedOn[i.id].sort().map(d => fmtDate(d)).join(', ')}</span>` : ''}</span>
             <span class="pi-actions">
               <button class="icon-btn" data-up ${idx === 0 ? 'disabled' : ''} aria-label="Monter">${icon('up')}</button>
               <button class="icon-btn" data-edit aria-label="Modifier">${icon('edit')}</button>

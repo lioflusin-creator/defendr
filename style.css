@@ -422,3 +422,7 @@ a.btn.disabled { opacity: .45; }
   .sign-box { height: 80px; border-bottom: 1px solid #000; display: flex; align-items: flex-end; justify-content: center; padding-bottom: 4px; }
 }
 @media print { html, body { background: #fff !important; } }
+.linked-plan { background: var(--surface-2); border-radius: 10px; padding: 10px 12px; margin-bottom: 12px; display: flex; flex-direction: column; gap: 4px; }
+.linked-plan svg { width: 14px; height: 14px; }
+.linked-plan .dot { margin: 6px 4px 0 3px; }
+.cf-plan-box { max-height: 220px; overflow-y: auto; border: 1px solid var(--line); border-radius: 10px; padding: 4px 12px 8px; }
