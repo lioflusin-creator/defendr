@@ -463,7 +463,7 @@ function memberForm(m, onSaved) {
     <div class="field"><label for="mf-discipline_id">Discipline</label>${sel('discipline_id', S.disciplines.filter(d => d.is_active || d.id === v.discipline_id).map(d => [d.id, d.name]), v.discipline_id)}</div>
     <div class="field"><label for="mf-level_id">Niveau</label>${sel('level_id', S.levels.filter(l => l.is_active || l.id === v.level_id).map(l => [l.id, l.name]), v.level_id)}</div>
     <div class="field"><label for="mf-status">Statut</label>${sel('status', [['actif', 'Actif'], ['inactif', 'Inactif']], v.status)}</div>
-    <div class="field"><label for="mf-member_role">Rôle</label>${sel('member_role', [['membre', 'Membre'], ['bureau', 'Membre du bureau'], ['enseignant', 'Enseignant'], ['assistant', 'Assistant']], v.member_role)}</div>
+    <div class="field"><label for="mf-member_role">Rôle</label>${sel('member_role', [['membre', 'Membre'], ['animateur', 'Animateur'], ['bureau', 'Membre du bureau'], ['enseignant', 'Enseignant'], ['assistant', 'Assistant']], v.member_role)}</div>
     ${inp('registration_date', 'Date d’inscription', 'date')}
     <div class="field"><label for="mf-tshirt_size">Taille du T-shirt</label>${sel('tshirt_size', ['XS', 'S', 'M', 'L', 'XL', 'XXL', 'XXXL'].map(x => [x, x]), v.tshirt_size)}</div>
     <div class="fieldset-title">Cotisation</div>
@@ -473,6 +473,7 @@ function memberForm(m, onSaved) {
     ${chk('medical_certificate', 'Certificat médical fourni')}
     ${chk('qss', 'QSS (Questionnaire de Santé Sportive) rempli')}
     ${chk('medical_waiver', 'Décharge médicale signée')}
+    ${inp('medical_waiver_validity', 'Décharge valable jusqu’au', 'date')}
     <div class="field full"><label for="mf-medical_notes">Notes médicales</label><textarea class="input" id="mf-medical_notes" name="medical_notes">${esc(v.medical_notes ?? '')}</textarea><span class="help">Ne notez que ce qui est utile à la sécurité pendant les cours.</span></div>
     <div class="fieldset-title">Origine et expérience</div>
     ${inp('how_found', 'Comment avez-vous connu le club ?', 'text', 'full')}
@@ -562,7 +563,7 @@ async function viewMember(view, id) {
       </dl></div>
       <div class="card card-pad"><h2>Santé et documents</h2><dl class="kv">
         <dt>Certificat médical</dt><dd>${yes(m.medical_certificate)}</dd><dt>QSS</dt><dd>${yes(m.qss)}</dd>
-        <dt>Décharge médicale</dt><dd>${yes(m.medical_waiver)}</dd><dt>Notes médicales</dt><dd>${esc(m.medical_notes || '—')}</dd>
+        <dt>Décharge médicale</dt><dd>${yes(m.medical_waiver)}${m.medical_waiver_validity ? ' · jusqu’au ' + fmtDate(m.medical_waiver_validity) : ''}</dd><dt>Notes médicales</dt><dd>${esc(m.medical_notes || '—')}</dd>
       </dl></div>
       <div class="card card-pad"><h2>Consentements</h2><dl class="kv">
         <dt>Droit à l’image</dt><dd>${yes(m.consent_image)}</dd><dt>Utilisation des données</dt><dd>${yes(m.consent_data)}</dd>
@@ -572,7 +573,7 @@ async function viewMember(view, id) {
       ${isAdmin() ? `<div class="card card-pad"><div class="row between"><h2 style="margin:0">Paiements${season ? ' · ' + esc(season.label) : ''}</h2>
           ${due > 0 ? `<span class="badge danger">Reste ${fmtMoney(due)}</span>` : (m.fee_amount ? '<span class="badge ok">À jour</span>' : '')}</div>
         <div class="small muted mb">Payé : ${fmtMoney(paid)}${m.fee_amount != null ? ' sur ' + fmtMoney(m.fee_amount) : ''}</div>
-        ${seasonPays.length ? seasonPays.map(p => `<div class="bday"><div style="flex:1"><div style="font-weight:600">${esc(p.payment_type)}</div><div class="small muted">${fmtDate(p.payment_date)}${p.method ? ' · ' + esc(p.method) : ''}</div></div><div style="text-align:right"><div style="font-weight:700">${fmtMoney(p.amount)}</div><span class="badge ${p.status === 'payé' ? 'ok' : 'warn'}">${p.status === 'payé' ? 'Payé' : 'En attente'}</span></div></div>`).join('') : '<div class="empty">Aucun paiement enregistré.</div>'}
+        ${seasonPays.length ? seasonPays.map(p => `<div class="bday"><div style="flex:1"><div style="font-weight:600">${esc(p.payment_type)}</div><div class="small muted">${fmtDate(p.payment_date)}${p.method ? ' · ' + esc(p.method) : ''}${p.bank_checked ? ' · pointé' : ''}</div></div><div style="text-align:right"><div style="font-weight:700">${fmtMoney(p.amount)}</div><span class="badge ${p.status === 'payé' ? 'ok' : 'warn'}">${p.status === 'payé' ? 'Payé' : 'En attente'}</span></div></div>`).join('') : '<div class="empty">Aucun paiement enregistré.</div>'}
         <p class="small muted">L’enregistrement des paiements arrive avec la rubrique Comptabilité.</p>
       </div>` : ''}
       <div class="card card-pad"><div class="row between"><h2 style="margin:0">Historique des cours</h2>${att.length ? `<span class="badge">${present}/${att.length} présences</span>` : ''}</div>
