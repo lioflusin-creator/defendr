@@ -92,6 +92,7 @@ const I = {
   x: '<path d="M6 6l12 12M18 6 6 18"/>',
   logout: '<path d="M15 4h4a1 1 0 0 1 1 1v14a1 1 0 0 1-1 1h-4M10 16l-4-4 4-4M6 12h10"/>',
   left: '<path d="M15 5l-7 7 7 7"/>',
+  up: '<path d="M5 15l7-7 7 7"/>',
   right: '<path d="M9 5l7 7-7 7"/>',
   file: '<path d="M14 3H6a1 1 0 0 0-1 1v16a1 1 0 0 0 1 1h12a1 1 0 0 0 1-1V8z"/><path d="M14 3v5h5M9 13h6M9 17h6"/>',
   copy: '<rect x="8" y="8" width="12" height="12" rx="2"/><path d="M16 8V5a1 1 0 0 0-1-1H5a1 1 0 0 0-1 1v10a1 1 0 0 0 1 1h3"/>',
@@ -140,7 +141,7 @@ const NAV = [
   { path: '/', label: 'Tableau de bord', short: 'Accueil', icon: 'home' },
   { path: '/membres', label: 'Membres', short: 'Membres', icon: 'users' },
   { path: '/planning', label: 'Planning', short: 'Planning', icon: 'calendar' },
-  { path: '/planification', label: 'Planification annuelle', icon: 'list', soon: true },
+  { path: '/planification', label: 'Planification annuelle', icon: 'list' },
   { path: '/paiements', label: 'Comptabilité', short: 'Compta', icon: 'euro', admin: true },
   { path: '/disciplines', label: 'Disciplines', icon: 'target' },
   { path: '/niveaux', label: 'Niveaux', icon: 'layers' },
@@ -305,6 +306,7 @@ async function route() {
     else if (path === '/planning') await viewPlanning(view);
     else if (path === '/paiements' && isAdmin()) await viewAccounting(view);
     else if (path === '/statistiques') await viewStats(view);
+    else if (path === '/planification') await viewPlan(view);
     else if (path === '/disciplines') await viewDisciplines(view);
     else if (path === '/niveaux') await viewLevels(view);
     else if (path === '/parametres') await viewSettings(view);
@@ -1085,6 +1087,111 @@ function courseForm(c, defaults = {}) {
         }
       } catch (e) { fail(e); btn.disabled = false; }
     },
+  });
+}
+
+/* =====================================================================
+   Planification annuelle
+   ===================================================================== */
+const SEASON_MONTHS = [9, 10, 11, 12, 1, 2, 3, 4, 5, 6, 7, 8];
+const PLAN_SECTIONS = ['Technico tactique', 'Connaissances générales', 'Préparation physique générale', 'Préparation récupération'];
+S.planMonth = new Date().getMonth() + 1;
+
+async function viewPlan(view) {
+  const season = activeSeason();
+  if (!season) { view.innerHTML = head('Planification annuelle') + `<div class="card empty">Aucune saison active. ${isAdmin() ? '<a href="#/parametres">Créez la saison en cours dans les Paramètres.</a>' : ''}</div>`; return; }
+  const { data: items, error } = await sb.from('plan_items').select('*').eq('season_id', season.id).order('position');
+  if (error) throw error;
+  const month = S.planMonth, monthName = m => MONTHS[m - 1][0].toUpperCase() + MONTHS[m - 1].slice(1);
+  const ofMonth = items.filter(i => i.month === month);
+  const done = ofMonth.filter(i => i.done).length;
+  const sections = [...new Set([...PLAN_SECTIONS, ...ofMonth.map(i => i.category)])];
+  const yearDone = items.filter(i => i.done).length;
+
+  view.innerHTML = head('Planification annuelle', `Programme mois par mois, à cocher au fil de l’année · saison ${esc(season.label)}`) + `
+    <div class="month-tabs" role="tablist" aria-label="Mois">${SEASON_MONTHS.map(m => {
+      const its = items.filter(i => i.month === m), d = its.filter(i => i.done).length;
+      return `<button class="mtab ${m === month ? 'active' : ''}" data-month="${m}" role="tab" aria-selected="${m === month}"><span>${['Janv.', 'Févr.', 'Mars', 'Avr.', 'Mai', 'Juin', 'Juil.', 'Août', 'Sept.', 'Oct.', 'Nov.', 'Déc.'][m - 1]}</span><span class="mtab-bar">${its.length ? `<span style="width:${d / its.length * 100}%"></span>` : ''}</span></button>`;
+    }).join('')}</div>
+    <div class="card card-pad mb">
+      <div class="row between wrap">
+        <div><h2 style="margin:0;font-size:20px">${monthName(month)}</h2><div class="small muted">Avancement du mois : ${done}/${ofMonth.length}${items.length ? ` · année : ${yearDone}/${items.length}` : ''}</div></div>
+        ${ofMonth.length ? `<div class="progress-big"><span style="width:${ofMonth.length ? done / ofMonth.length * 100 : 0}%"></span></div>` : ''}
+      </div>
+    </div>
+    ${!items.length && S.seasons.length > 1 && isAdmin() ? `<div class="alert info">Le programme de cette saison est vide. <button class="link" id="copy-plan">Copier le programme d’une saison précédente</button></div>` : ''}
+    <div class="grid two plan-grid">${sections.map(sec => {
+      const its = ofMonth.filter(i => i.category === sec).sort((a, b) => a.position - b.position);
+      const d = its.filter(i => i.done).length;
+      return `<div class="card card-pad" data-sec="${esc(sec)}">
+        <div class="row between"><h2 style="margin:0">${esc(sec)}</h2><span class="badge ${its.length && d === its.length ? 'ok' : ''}">${d}/${its.length}</span></div>
+        <div class="plan-list mt">${its.map((i, idx) => `
+          <div class="plan-item ${i.done ? 'done' : ''}" data-id="${i.id}">
+            <input type="checkbox" class="pi-check" ${i.done ? 'checked' : ''} aria-label="Fait : ${esc(i.label)}">
+            <span class="pi-label">${esc(i.label)}</span>
+            <span class="pi-actions">
+              <button class="icon-btn" data-up ${idx === 0 ? 'disabled' : ''} aria-label="Monter">${icon('up')}</button>
+              <button class="icon-btn" data-edit aria-label="Modifier">${icon('edit')}</button>
+              <button class="icon-btn" data-del aria-label="Supprimer">${icon('trash')}</button>
+            </span>
+          </div>`).join('')}</div>
+        <form class="tag-add mt" data-add="${esc(sec)}"><input class="input" placeholder="Ajouter un élément…" aria-label="Ajouter un élément en ${esc(sec)}"><button class="btn" type="submit">${icon('plus')}</button></form>
+      </div>`;
+    }).join('')}</div>`;
+
+  $$('[data-month]', view).forEach(b => b.onclick = () => { S.planMonth = Number(b.dataset.month); route(); });
+  view.querySelector('.mtab.active')?.scrollIntoView({ inline: 'center', block: 'nearest' });
+  const byId = id => items.find(i => i.id === id);
+  $$('.plan-item', view).forEach(row => {
+    const it = byId(row.dataset.id);
+    $('.pi-check', row).onchange = async e => {
+      const { error } = await sb.from('plan_items').update({ done: e.target.checked }).eq('id', it.id);
+      if (error) { e.target.checked = !e.target.checked; return fail(error); }
+      route();
+    };
+    $('[data-del]', row).onclick = async () => {
+      if (!await confirmBox('Supprimer l’élément', `Supprimer « ${esc(it.label)} » du programme ?`)) return;
+      const { error } = await sb.from('plan_items').delete().eq('id', it.id); if (error) return fail(error); route();
+    };
+    $('[data-up]', row).onclick = async () => {
+      const sib = ofMonth.filter(i => i.category === it.category).sort((a, b) => a.position - b.position);
+      const k = sib.findIndex(i => i.id === it.id); if (k < 1) return;
+      const reordered = [...sib]; [reordered[k - 1], reordered[k]] = [reordered[k], reordered[k - 1]];
+      const results = await Promise.all(reordered.map((i, p) => sb.from('plan_items').update({ position: p }).eq('id', i.id)));
+      const err = results.find(r => r.error); if (err) return fail(err.error); route();
+    };
+    $('[data-edit]', row).onclick = () => openModal({
+      title: 'Modifier l’élément', size: 'sm',
+      body: `<form id="pe"><div class="field"><label for="pe-l">Intitulé</label><textarea class="input" id="pe-l" name="label">${esc(it.label)}</textarea></div>
+        <div class="field"><label for="pe-c">Rubrique</label><select class="input" id="pe-c" name="category">${sections.map(s => `<option ${s === it.category ? 'selected' : ''}>${esc(s)}</option>`).join('')}</select></div>
+        <div class="field"><label for="pe-m">Mois</label><select class="input" id="pe-m" name="month">${SEASON_MONTHS.map(m => `<option value="${m}" ${m === it.month ? 'selected' : ''}>${monthName(m)}</option>`).join('')}</select></div></form>`,
+      foot: `<button class="btn" data-close>Annuler</button><button class="btn btn-primary" id="pe-save">Enregistrer</button>`,
+      onMount: r => $('#pe-save', r).onclick = async () => {
+        const d = readForm($('#pe', r)); d.month = Number(d.month);
+        if (!d.label) return toast('L’intitulé est obligatoire.', 'error');
+        const { error } = await sb.from('plan_items').update(d).eq('id', it.id); if (error) return fail(error);
+        closeModal(); toast('Élément modifié'); route();
+      },
+    });
+  });
+  $$('[data-add]', view).forEach(f => f.onsubmit = async e => {
+    e.preventDefault();
+    const label = $('input', f).value.trim(); if (!label) return;
+    const sec = f.dataset.add, pos = Math.max(-1, ...ofMonth.filter(i => i.category === sec).map(i => i.position)) + 1;
+    const { error } = await sb.from('plan_items').insert({ season_id: season.id, month, category: sec, label, position: pos });
+    if (error) return fail(error);
+    toast('Élément ajouté'); route();
+  });
+  $('#copy-plan') && ($('#copy-plan').onclick = async () => {
+    const prev = S.seasons.filter(s => s.id !== season.id);
+    const { data: old, error } = await sb.from('plan_items').select('month, category, label, position, season_id').in('season_id', prev.map(s => s.id));
+    if (error) return fail(error);
+    const src = prev.find(s => old.some(o => o.season_id === s.id));
+    if (!src) return toast('Aucun programme à copier.', 'error');
+    if (!await confirmBox('Copier le programme', `Copier les ${old.filter(o => o.season_id === src.id).length} éléments de la saison ${esc(src.label)} (tous décochés) ?`, 'Copier')) return;
+    const { error: e2 } = await sb.from('plan_items').insert(old.filter(o => o.season_id === src.id).map(({ season_id, ...o }) => ({ ...o, season_id: season.id, done: false })));
+    if (e2) return fail(e2);
+    toast('Programme copié'); route();
   });
 }
 

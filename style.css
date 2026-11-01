@@ -382,3 +382,25 @@ input.pt { width: 18px; height: 18px; accent-color: var(--ok); cursor: pointer; 
 .mt-xs { margin-top: 6px; }
 .list-item .bar { max-width: 320px; }
 .stat-btn { width: 100%; height: 100%; align-self: stretch; }
+
+/* ---------- Planification annuelle ---------- */
+.month-tabs { display: grid; grid-template-columns: repeat(12, minmax(0, 1fr)); gap: 6px; margin-bottom: 16px; }
+@media (max-width: 860px) { .month-tabs { display: flex; overflow-x: auto; scrollbar-width: none; padding-bottom: 4px; } .mtab { flex: 0 0 68px; } }
+.mtab { display: flex; flex-direction: column; gap: 6px; align-items: stretch; text-align: center; border: 1px solid var(--line); background: var(--surface); border-radius: 10px; padding: 8px 6px; cursor: pointer; font-size: 13px; font-weight: 600; }
+.mtab.active { border-color: var(--text); background: var(--text); color: var(--bg); }
+.mtab-bar { height: 4px; border-radius: 99px; background: var(--surface-2); overflow: hidden; display: block; }
+.mtab.active .mtab-bar { background: rgba(255,255,255,.25); }
+.mtab-bar > span { display: block; height: 100%; background: var(--ok); }
+.progress-big { width: min(280px, 100%); height: 10px; background: var(--surface-2); border-radius: 99px; overflow: hidden; }
+.progress-big > span { display: block; height: 100%; background: var(--ok); border-radius: 99px; }
+.plan-list { display: flex; flex-direction: column; }
+.plan-item { display: flex; align-items: flex-start; gap: 10px; padding: 9px 0; border-bottom: 1px solid var(--line); }
+.plan-item:last-child { border-bottom: 0; }
+.pi-check { width: 20px; height: 20px; margin-top: 1px; accent-color: var(--ok); flex-shrink: 0; cursor: pointer; }
+.pi-label { flex: 1; font-size: 14px; }
+.plan-item.done .pi-label { color: var(--muted); text-decoration: line-through; text-decoration-color: var(--line); }
+.pi-actions { display: flex; opacity: 0; transition: opacity .15s; }
+.plan-item:hover .pi-actions, .plan-item:focus-within .pi-actions { opacity: 1; }
+@media (hover: none) { .pi-actions { opacity: 1; } .pi-actions .icon-btn { padding: 4px; } }
+.pi-actions .icon-btn svg { width: 15px; height: 15px; }
+.pi-actions .icon-btn:disabled { opacity: .25; cursor: default; }
