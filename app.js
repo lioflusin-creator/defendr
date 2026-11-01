@@ -329,11 +329,37 @@ function viewSoon(view, item) {
 /* =====================================================================
    Tableau de bord
    ===================================================================== */
+/* Documents et autorisations à relancer pour un membre actif */
+function memberIssues(m) {
+  if (m.status !== 'actif') return [];
+  const out = [], today = new Date(), soon = isoDay(new Date(today.getFullYear(), today.getMonth(), today.getDate() + 30)), now = isoDay(today);
+  const waiverValid = m.medical_waiver && m.medical_waiver_validity && m.medical_waiver_validity >= now;
+  if (!m.medical_certificate) {
+    if (m.medical_waiver && m.medical_waiver_validity && m.medical_waiver_validity < now) out.push({ label: `Décharge expirée le ${fmtDate(m.medical_waiver_validity)}`, cls: 'danger', ask: 'un certificat médical (ta décharge a expiré)' });
+    else if (waiverValid && m.medical_waiver_validity <= soon) out.push({ label: `Décharge expire le ${fmtDate(m.medical_waiver_validity)}`, cls: 'warn', ask: `un certificat médical avant le ${fmtDay(m.medical_waiver_validity)}` });
+    else if (!waiverValid) out.push({ label: 'Certificat manquant', cls: 'warn', ask: 'un certificat médical' });
+  }
+  if (!m.qss) out.push({ label: 'QSS manquant', cls: '', ask: 'le questionnaire de santé (QSS)' });
+  const age = ageOf(m.birth_date);
+  if (age != null && age < 18) {
+    if (!m.parental_authorization) out.push({ label: 'Autorisation parentale', cls: 'danger', ask: 'l’autorisation parentale signée' });
+    if (!m.guardian_name || !m.guardian_phone) out.push({ label: 'Responsable légal à compléter', cls: 'warn', ask: 'les coordonnées du responsable légal' });
+  }
+  return out;
+}
+function reminderLink(m, issues) {
+  const minor = (ageOf(m.birth_date) ?? 99) < 18;
+  const phone = minor && m.guardian_phone ? m.guardian_phone : m.phone;
+  if (!waLink(phone)) return null;
+  const who = minor && m.guardian_phone ? `Bonjour${m.guardian_name ? ' ' + m.guardian_name.split(' ')[0] : ''},\n\npour l’inscription de ${m.first_name}` : `Bonjour ${m.first_name},\n\npour ton inscription`;
+  return waUrl(phone, `${who} au ${S.settings?.club_name || 'club'}, il nous manque encore :\n${issues.map(i => '• ' + i.ask).join('\n')}\n\nMerci de nous le transmettre au prochain cours 🙏`);
+}
+
 async function viewDashboard(view) {
   const season = activeSeason();
-  const membersQ = sb.from('members').select('id, first_name, last_name, birth_date, status, medical_certificate, discipline_id');
+  const membersQ = sb.from('members').select('*');
   const coursesQ = season ? sb.from('courses').select('id', { count: 'exact', head: true }).eq('season_id', season.id) : sb.from('courses').select('id', { count: 'exact', head: true });
-  const payQ = isAdmin() ? (season ? sb.from('payments').select('id, amount, status, payment_date, payment_type, member_id').eq('season_id', season.id).eq('archived', false) : sb.from('payments').select('id, amount, status, payment_date, payment_type, member_id').eq('archived', false)) : null;
+  const payQ = isAdmin() ? (season ? sb.from('payments').select('id, amount, status, payment_date, due_date, payment_type, member_id, method, bank_checked').eq('season_id', season.id).eq('archived', false) : sb.from('payments').select('id, amount, status, payment_date, due_date, payment_type, member_id, method, bank_checked').eq('archived', false)) : null;
   const expQ = isAdmin() ? (season ? sb.from('expenses').select('amount').eq('season_id', season.id).eq('archived', false) : sb.from('expenses').select('amount').eq('archived', false)) : null;
   const [mr, cr, pr, er] = await Promise.all([membersQ, coursesQ, payQ, expQ]);
   for (const r of [mr, cr, pr, er]) if (r?.error) throw r.error;
@@ -360,6 +386,25 @@ async function viewDashboard(view) {
     lastPays = `<div class="card card-pad"><h2>Derniers paiements</h2>${recent.length ? recent.map(p => `
       <div class="bday"><div class="grow" style="flex:1"><div style="font-weight:600">${esc(mName(p.member_id))}</div><div class="small muted">${fmtDate(p.payment_date)} · ${esc(p.payment_type)}</div></div>
       <div style="text-align:right"><div style="font-weight:700">${fmtMoney(p.amount)}</div><span class="badge ${p.status === 'payé' ? 'ok' : 'warn'}">${p.status === 'payé' ? 'Payé' : 'En attente'}</span></div></div>`).join('') : '<div class="empty">Aucun paiement pour l’instant.</div>'}</div>`;
+
+    // Chèques à déposer : chèques non pointés dont l'encaissement est dû d'ici 7 jours
+    const today = isoDay(new Date()), week = isoDay(addDays(new Date(), 7));
+    const cheques = pays.filter(p => /ch[eè]que/i.test(p.method || '') && p.status === 'payé' && !p.bank_checked && (p.due_date || p.payment_date) <= week)
+      .sort((a, b) => (a.due_date || a.payment_date).localeCompare(b.due_date || b.payment_date));
+    const later = pays.filter(p => /ch[eè]que/i.test(p.method || '') && p.status === 'payé' && !p.bank_checked && (p.due_date || p.payment_date) > week);
+    lastPays += `<div class="card card-pad"><div class="row between"><h2 style="margin:0">Chèques à déposer</h2><span class="badge ${cheques.length ? 'warn' : 'ok'}">${cheques.length}</span></div>
+      <div class="small muted mb">Chèques à encaisser d’ici une semaine${later.length ? ` · ${later.length} autre(s) plus tard (${fmtMoney(later.reduce((s, p) => s + Number(p.amount), 0))})` : ''}.</div>
+      ${cheques.length ? cheques.map(p => { const d = p.due_date || p.payment_date; return `<div class="bday"><div style="flex:1"><div style="font-weight:600">${esc(mName(p.member_id))} · ${fmtMoney(p.amount)}</div><div class="small muted">${d < today ? `<span style="color:var(--danger)">prévu le ${fmtDate(d)}</span>` : `à déposer le ${fmtDate(d)}`}</div></div><button class="btn btn-sm" data-deposit="${p.id}">${icon('check')}Déposé</button></div>`; }).join('') : '<div class="empty" style="padding:16px">Aucun chèque à déposer cette semaine.</div>'}
+    </div>`;
+
+    // Soldes impayés de la saison
+    const paidBy = {}; pays.filter(p => p.status === 'payé').forEach(p => { paidBy[p.member_id] = (paidBy[p.member_id] || 0) + Number(p.amount); });
+    const unpaid = active.map(m => ({ m, due: Number(m.fee_amount || 0) - (paidBy[m.id] || 0) })).filter(x => x.due > 0).sort((a, b) => b.due - a.due);
+    lastPays += `<div class="card card-pad"><div class="row between"><h2 style="margin:0">Soldes impayés</h2><span class="badge ${unpaid.length ? 'danger' : 'ok'}">${fmtMoney(unpaid.reduce((s, x) => s + x.due, 0))}</span></div>
+      <div class="mt">${unpaid.length ? unpaid.map(({ m, due }) => { const minor = (ageOf(m.birth_date) ?? 99) < 18, phone = minor && m.guardian_phone ? m.guardian_phone : m.phone;
+        const link = waLink(phone) ? waUrl(phone, `Bonjour ${minor && m.guardian_name ? m.guardian_name.split(' ')[0] : m.first_name},\n\npetit rappel du ${S.settings?.club_name || 'club'} : il reste ${fmtMoney(due)} à régler pour la cotisation ${season ? season.label : ''}${minor ? ' de ' + m.first_name : ''}.\nTu peux régler par chèque, virement ou espèces au prochain cours.\n\nMerci ! 🙏`) : null;
+        return `<div class="bday"><a href="#/membres/${m.id}" style="flex:1;text-decoration:none"><div style="font-weight:600">${esc(fullName(m))}</div><div class="small muted">reste ${fmtMoney(due)} sur ${fmtMoney(m.fee_amount)}</div></a>${link ? `<a class="btn btn-sm" href="${esc(link)}" target="_blank" rel="noopener">${icon('chat')}Relancer</a>` : ''}</div>`; }).join('') : '<div class="empty" style="padding:16px">Toutes les cotisations sont réglées 👏</div>'}</div>
+    </div>`;
   } else {
     money = `<div class="card stat"><div class="label">Certificats manquants</div><div class="value">${noCert.length}</div><div class="hint">membres actifs</div></div>
       <div class="card stat"><div class="label">Anniversaires</div><div class="value">${bdays.length}</div><div class="hint">ce mois-ci</div></div>`;
@@ -374,6 +419,14 @@ async function viewDashboard(view) {
       ${money}
     </div>
     <div class="grid two">
+      ${(() => {
+        const todo = active.map(m => ({ m, issues: memberIssues(m) })).filter(x => x.issues.length)
+          .sort((a, b) => b.issues.filter(i => i.cls === 'danger').length - a.issues.filter(i => i.cls === 'danger').length || b.issues.length - a.issues.length);
+        return `<div class="card card-pad"><div class="row between"><h2 style="margin:0">À relancer</h2><span class="badge ${todo.length ? 'warn' : 'ok'}">${todo.length}</span></div>
+          <div class="small muted mb">Documents de santé et autorisations à récupérer.</div>
+          ${todo.length ? todo.slice(0, 6).map(({ m, issues }) => { const link = reminderLink(m, issues); return `<div class="bday"><a href="#/membres/${m.id}" style="flex:1;text-decoration:none;min-width:0"><div style="font-weight:600">${esc(fullName(m))}</div><div class="row wrap" style="gap:4px;margin-top:3px">${issues.map(i => `<span class="badge ${i.cls}">${esc(i.label)}</span>`).join('')}</div></a>${link ? `<a class="btn btn-sm" href="${esc(link)}" target="_blank" rel="noopener">${icon('chat')}Relancer</a>` : ''}</div>`; }).join('') + (todo.length > 6 ? `<a class="btn btn-sm mt" href="#/membres" data-filter="relancer">Voir les ${todo.length} membres à relancer</a>` : '') : '<div class="empty" style="padding:16px">Tous les dossiers sont complets 👏</div>'}
+        </div>`;
+      })()}
       <div class="card card-pad"><h2>Anniversaires de ${MONTHS[month]}</h2>
         ${bdays.length ? bdays.map(m => `<a class="bday" href="#/membres/${m.id}" style="text-decoration:none"><div class="avatar">${esc(initials(m))}</div><div style="flex:1"><div style="font-weight:600">${esc(fullName(m))}</div><div class="small muted">${fmtDay(m.birth_date)} · ${new Date().getFullYear() - Number(m.birth_date.slice(0, 4))} ans</div></div>${new Date(m.birth_date + 'T00:00:00').getDate() === new Date().getDate() ? '<span class="badge accent">Aujourd’hui</span>' : ''}</a>`).join('') : '<div class="empty">Aucun anniversaire ce mois-ci.</div>'}
       </div>
@@ -384,6 +437,12 @@ async function viewDashboard(view) {
       ${lastPays}
     </div>`;
   $$('[data-filter]', view).forEach(a => a.onclick = () => { S.memberFilter = a.dataset.filter; });
+  $$('[data-deposit]', view).forEach(b => b.onclick = async () => {
+    b.disabled = true;
+    const { error } = await sb.from('payments').update({ bank_checked: true }).eq('id', b.dataset.deposit);
+    if (error) { b.disabled = false; return fail(error); }
+    toast('Chèque marqué comme déposé et pointé'); route();
+  });
 }
 
 /* =====================================================================
@@ -406,6 +465,7 @@ async function viewMembers(view) {
     { k: 'tous', label: 'Tous', fn: () => true },
     { k: 'actifs', label: 'Actifs', fn: m => m.status === 'actif' },
     ...(isAdmin() ? [{ k: 'impayes', label: 'Soldes impayés', fn: m => m.status === 'actif' && balance(m) > 0 }] : []),
+    { k: 'relancer', label: 'À relancer', fn: m => memberIssues(m).length > 0 },
     { k: 'certificat', label: 'Certificat manquant', fn: m => m.status === 'actif' && !m.medical_certificate },
     { k: 'anniversaires', label: 'Anniversaires du mois', fn: m => isBirthdayMonth(m.birth_date) },
     { k: 'inactifs', label: 'Inactifs', fn: m => m.status === 'inactif' },
@@ -489,6 +549,12 @@ function memberForm(m, onSaved) {
     ${chk('medical_waiver', 'Décharge médicale signée')}
     ${inp('medical_waiver_validity', 'Décharge valable jusqu’au', 'date')}
     <div class="field full"><label for="mf-medical_notes">Notes médicales</label><textarea class="input" id="mf-medical_notes" name="medical_notes">${esc(v.medical_notes ?? '')}</textarea><span class="help">Ne notez que ce qui est utile à la sécurité pendant les cours.</span></div>
+    <div class="fieldset-title">Mineur : responsable légal</div>
+    <p class="small muted full" style="margin:-4px 0 8px">À remplir pour les adhérents de moins de 18 ans.</p>
+    ${inp('guardian_name', 'Nom du responsable légal')}${inp('guardian_phone', 'Téléphone du responsable', 'tel')}
+    ${inp('guardian_email', 'E-mail du responsable', 'email', 'full')}
+    ${chk('parental_authorization', 'Autorisation parentale signée')}
+    <div class="field full"><label for="mf-pickup_persons">Personnes autorisées à récupérer l’enfant</label><input class="input" id="mf-pickup_persons" name="pickup_persons" value="${esc(v.pickup_persons ?? '')}" placeholder="ex : Mère, grand-père (Jean Dupont)"></div>
     <div class="fieldset-title">Origine et expérience</div>
     ${inp('how_found', 'Comment avez-vous connu le club ?', 'text', 'full')}
     ${chk('other_defense_sport', 'A déjà pratiqué un autre sport de défense')}
@@ -563,6 +629,14 @@ async function viewMember(view, id) {
         </div>
       </div>
     </div>
+    ${(() => { const iss = memberIssues(m); if (!iss.length) return ''; const link = reminderLink(m, iss);
+      return `<div class="alert info row wrap between mb" style="gap:8px"><div class="row wrap" style="gap:6px"><strong>À relancer :</strong>${iss.map(i => `<span class="badge ${i.cls}">${esc(i.label)}</span>`).join('')}</div>${link ? `<a class="btn btn-sm" href="${esc(link)}" target="_blank" rel="noopener">${icon('chat')}Relancer sur WhatsApp</a>` : ''}</div>`; })()}
+    ${(ageOf(m.birth_date) ?? 99) < 18 ? `<div class="card card-pad mb"><h2>Mineur · responsable légal</h2><dl class="kv">
+        <dt>Responsable</dt><dd>${esc(m.guardian_name || '—')}</dd>
+        <dt>Téléphone</dt><dd>${m.guardian_phone ? `<a href="tel:${esc(m.guardian_phone.replace(/\s/g, ''))}">${esc(m.guardian_phone)}</a>` : '—'}</dd>
+        <dt>E-mail</dt><dd>${esc(m.guardian_email || '—')}</dd>
+        <dt>Autorisation parentale</dt><dd>${yes(m.parental_authorization)}</dd>
+        <dt>Peut récupérer l’enfant</dt><dd>${esc(m.pickup_persons || '—')}</dd></dl></div>` : ''}
     <div class="grid two">
       <div class="card card-pad"><h2>Coordonnées</h2><dl class="kv">
         <dt>Téléphone</dt><dd>${esc(m.phone || '—')}</dd><dt>E-mail</dt><dd>${esc(m.email || '—')}</dd>
