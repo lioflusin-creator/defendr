@@ -18,7 +18,10 @@ const S = {
   memberFilter: 'tous',
   memberSearch: '',
 };
-const isAdmin = () => S.profile?.role === 'admin';
+const isAdmin = () => ['admin', 'tresorier'].includes(S.profile?.role);
+const isPresident = () => S.profile?.role === 'admin';
+const ROLE_LABELS = { admin: 'Président(e)', tresorier: 'Trésorier(ère)', enseignant: 'Enseignant(e)', en_attente: 'En attente' };
+const roleLabel = r => ROLE_LABELS[r] || r;
 const activeSeason = () => S.seasons.find(s => s.is_active) || null;
 
 /* =====================================================================
@@ -162,7 +165,7 @@ function navLinks(path) {
 function sideFoot() {
   return `<div class="side-foot">
     <div class="who">${esc(S.profile?.full_name || S.session?.user?.email)}</div>
-    <div class="role">${S.profile?.role === 'admin' ? 'Administrateur' : 'Enseignant'}</div>
+    <div class="role">${esc(roleLabel(S.profile?.role))}</div>
     <button data-logout>Se déconnecter</button>
   </div>`;
 }
@@ -224,7 +227,7 @@ async function boot() {
     app.innerHTML = `<div class="auth"><div class="auth-card card card-pad">
       <div class="logo-mark">D</div>
       <h1>Compte en attente</h1>
-      <p class="lead">Votre compte est bien créé. L'administrateur du club doit maintenant le valider avant que vous puissiez accéder aux données.</p>
+      <p class="lead">Votre compte est bien créé. Le président ou le trésorier du club doit maintenant le valider avant que vous puissiez accéder aux données.</p>
       <button class="btn btn-block" data-logout>Se déconnecter</button></div></div>`;
     return bindGlobal(app);
   }
@@ -236,7 +239,7 @@ function renderAuth(mode) {
   S.authMode = mode;
   const titles = {
     login: ['Connexion', 'Accédez à la gestion de votre club.'],
-    signup: ['Créer un compte', 'Le premier compte créé devient administrateur du club.'],
+    signup: ['Créer un compte', 'Après création, votre compte sera validé par le président ou le trésorier du club.'],
     forgot: ['Mot de passe oublié', 'Recevez un lien pour choisir un nouveau mot de passe.'],
     reset: ['Nouveau mot de passe', 'Choisissez votre nouveau mot de passe.'],
   };
@@ -311,7 +314,7 @@ async function route() {
     else if (path === '/disciplines') await viewDisciplines(view);
     else if (path === '/niveaux') await viewLevels(view);
     else if (path === '/parametres') await viewSettings(view);
-    else if (item?.admin && !isAdmin()) view.innerHTML = `<div class="empty">Cette rubrique est réservée à l'administrateur.</div>`;
+    else if (item?.admin && !isAdmin()) view.innerHTML = `<div class="empty">Cette rubrique est réservée au président et au trésorier.</div>`;
     else if (item) viewSoon(view, item);
     else go('/');
   } catch (e) { fail(e); view.innerHTML = `<div class="empty">Impossible de charger cette page.</div>`; }
@@ -797,8 +800,8 @@ async function viewLevels(view) {
    ===================================================================== */
 async function viewSettings(view) {
   if (!isAdmin()) {
-    view.innerHTML = head('Paramètres') + `<div class="card card-pad"><h2>Mon compte</h2><dl class="kv"><dt>Nom</dt><dd>${esc(S.profile.full_name || '—')}</dd><dt>E-mail</dt><dd>${esc(S.session.user.email)}</dd><dt>Rôle</dt><dd>Enseignant</dd></dl>
-      <p class="small muted mt">Les réglages du club sont gérés par l’administrateur.</p><button class="btn mt" data-logout>${icon('logout')}Se déconnecter</button></div>`;
+    view.innerHTML = head('Paramètres') + `<div class="card card-pad"><h2>Mon compte</h2><dl class="kv"><dt>Nom</dt><dd>${esc(S.profile.full_name || '—')}</dd><dt>E-mail</dt><dd>${esc(S.session.user.email)}</dd><dt>Rôle</dt><dd>${esc(roleLabel(S.profile.role))}</dd></dl>
+      <p class="small muted mt">Les réglages du club sont gérés par le président et le trésorier.</p><button class="btn mt" data-logout>${icon('logout')}Se déconnecter</button></div>`;
     return bindGlobal(view);
   }
   await loadRefs();
@@ -860,12 +863,14 @@ async function viewSettings(view) {
 
       <div class="card card-pad">
         <h2>Équipe</h2>
-        <p class="small muted">Pour donner accès à un enseignant : il crée son compte depuis l’écran de connexion (« Créer un compte »), puis vous le validez ici en choisissant son rôle. Les enseignants n’ont pas accès à la comptabilité.</p>
+        <p class="small muted">Pour donner accès à quelqu’un : il crée son compte depuis l’écran de connexion (« Créer un compte »), puis vous le validez ici en choisissant son rôle.</p>
+        <ul class="small muted" style="margin:0 0 8px;padding-left:18px"><li><strong>Président(e)</strong> et <strong>Trésorier(ère)</strong> : accès à tout le logiciel, comptabilité comprise.</li><li><strong>Enseignant(e)</strong> : membres, planning, appel, planification et statistiques, sans la comptabilité.</li></ul>
         ${team.map(p => `<div class="bday"><div class="avatar">${esc((p.full_name || '?').slice(0, 2).toUpperCase())}</div><div style="flex:1"><div style="font-weight:600">${esc(p.full_name || '—')}</div>${p.id === S.profile.id ? '<div class="small muted">Vous</div>' : ''}</div>
-          ${p.id === S.profile.id ? '<span class="badge accent">Administrateur</span>' : `<select class="input" style="width:auto" data-role="${p.id}" aria-label="Rôle de ${esc(p.full_name || '')}">
+          ${p.id === S.profile.id || (p.role === 'admin' && !isPresident()) ? `<span class="badge accent">${esc(roleLabel(p.role))}</span>` : `<select class="input" style="width:auto" data-role="${p.id}" aria-label="Rôle de ${esc(p.full_name || '')}">
             <option value="en_attente" ${p.role === 'en_attente' ? 'selected' : ''}>En attente (aucun accès)</option>
-            <option value="enseignant" ${p.role === 'enseignant' ? 'selected' : ''}>Enseignant</option>
-            <option value="admin" ${p.role === 'admin' ? 'selected' : ''}>Administrateur</option></select>`}</div>`).join('')}
+            <option value="enseignant" ${p.role === 'enseignant' ? 'selected' : ''}>Enseignant(e)</option>
+            <option value="tresorier" ${p.role === 'tresorier' ? 'selected' : ''}>Trésorier(ère) · accès complet</option>
+            ${isPresident() ? `<option value="admin" ${p.role === 'admin' ? 'selected' : ''}>Président(e) · accès complet</option>` : ''}</select>`}</div>`).join('')}
       </div>
 
       <div class="card card-pad">
@@ -940,10 +945,16 @@ async function viewSettings(view) {
     if (error) return fail(error);
     toast('Saison clôturée'); route();
   });
-  $$('[data-role]', view).forEach(sel => sel.onchange = async () => {
-    const { error } = await sb.from('profiles').update({ role: sel.value }).eq('id', sel.dataset.role);
-    if (error) return fail(error);
-    toast('Rôle mis à jour');
+  $$('[data-role]', view).forEach(sel => {
+    sel.dataset.prev = sel.value;
+    sel.onchange = async () => {
+      const who = team.find(p => p.id === sel.dataset.role)?.full_name || 'cette personne';
+      if (['admin', 'tresorier'].includes(sel.value) && !await confirmBox('Accès complet', `${esc(who)} aura accès à <strong>tout le logiciel</strong>, y compris la comptabilité, les données médicales et la gestion de l’équipe. Confirmer ?`, 'Confirmer')) { sel.value = sel.dataset.prev; return; }
+      const { error } = await sb.from('profiles').update({ role: sel.value }).eq('id', sel.dataset.role);
+      if (error) { sel.value = sel.dataset.prev; return fail(error); }
+      sel.dataset.prev = sel.value;
+      toast(`${who} : ${roleLabel(sel.value)}`);
+    };
   });
 }
 
