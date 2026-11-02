@@ -884,6 +884,9 @@ async function viewSettings(view) {
         <div class="row wrap" style="gap:8px"><a class="btn" href="https://github.com/lioflusin-creator/defendr/archive/refs/heads/main.zip" download>${icon('file')}Télécharger le logiciel</a>
           <a class="btn btn-sm" href="https://github.com/lioflusin-creator/defendr/commits/main" target="_blank" rel="noopener">Historique des versions</a></div>
         <p class="small muted mt">Avec ces deux fichiers, le club peut tout reconstruire si besoin.</p>
+        ${isPresident() ? `<div class="section-title mt" style="font-size:13px">3. Restaurer</div>
+        <p class="small muted">Remet les données du club telles qu’elles étaient dans un fichier de sauvegarde. Réservé au président.</p>
+        <label class="btn btn-danger" style="cursor:pointer">${icon('up')}Restaurer depuis une sauvegarde<input type="file" id="restore-file" accept=".xlsx" hidden></label>` : ''}
       </div>
 
       <div class="card card-pad">
@@ -894,6 +897,7 @@ async function viewSettings(view) {
       </div>
     </div>`;
   $('#backup').onclick = () => downloadBackup($('#backup'));
+  $('#restore-file') && ($('#restore-file').onchange = e => { const f = e.target.files[0]; e.target.value = ''; if (f) restoreFromFile(f); });
   $('#reg-copy').onclick = async () => { try { await navigator.clipboard.writeText(registrationUrl()); toast('Lien copié'); } catch { $('#reg-url').select(); toast('Sélectionnez le lien pour le copier', 'error'); } };
 
   const save = async (data, msg = 'Paramètres enregistrés') => {
@@ -1507,14 +1511,24 @@ function lastBackupText() {
   return `<span class="badge ${days > 31 ? 'warn' : 'ok'}">Dernière sauvegarde : ${fmtDate(d.slice(0, 10))}${days > 31 ? ' · il est temps d’en refaire une' : ''}</span>`;
 }
 
+const XLSX_URL = 'https://cdn.jsdelivr.net/npm/xlsx@0.18.5/+esm';
+/* Onglets du fichier de sauvegarde ↔ tables de la base */
+const BACKUP_SHEETS = {
+  'Membres': 'members', 'Paiements': 'payments', 'Dépenses': 'expenses', 'Séances': 'courses', 'Présences': 'attendances',
+  'Planification': 'plan_items', 'Disciplines': 'disciplines', 'Niveaux': 'levels', 'Saisons': 'seasons', 'Paramètres': 'club_settings',
+  'Historique grades': 'level_history', 'Lien séances-programme': 'course_plan_items',
+};
+
 async function downloadBackup(btn) {
-  btn.disabled = true; const label = btn.innerHTML; btn.textContent = 'Préparation…';
+  const label = btn?.innerHTML;
+  if (btn) { btn.disabled = true; btn.textContent = 'Préparation…'; }
   try {
-    const XLSX = await import('https://cdn.jsdelivr.net/npm/xlsx@0.18.5/+esm');
+    const XLSX = await import(XLSX_URL);
     const all = async (table, order) => { const { data, error } = await sb.from(table).select('*').order(order); if (error) throw error; return data; };
-    const [members, payments, expenses, courses, attendances, plan, disciplines, levels, seasons, settings] = await Promise.all([
+    const [members, payments, expenses, courses, attendances, plan, disciplines, levels, seasons, settings, history, links] = await Promise.all([
       all('members', 'last_name'), all('payments', 'payment_date'), all('expenses', 'expense_date'), all('courses', 'course_date'),
       all('attendances', 'course_id'), all('plan_items', 'month'), all('disciplines', 'name'), all('levels', 'rank'), all('seasons', 'created_at'), all('club_settings', 'id'),
+      all('level_history', 'changed_on'), all('course_plan_items', 'course_id'),
     ]);
     const nameOf = id => { const m = members.find(x => x.id === id); return m ? fullName(m) : ''; };
     const courseOf = id => courses.find(c => c.id === id);
@@ -1529,6 +1543,8 @@ async function downloadBackup(btn) {
       'Présences': clean(attendances.map(a => ({ date: courseOf(a.course_id)?.course_date || '', seance: courseOf(a.course_id)?.title || '', membre: nameOf(a.member_id), ...a }))),
       'Planification': clean(plan.map(p => ({ saison: seasonOf(p.season_id), mois: MONTHS[p.month - 1], ...p }))),
       'Disciplines': clean(disciplines), 'Niveaux': clean(levels), 'Saisons': clean(seasons), 'Paramètres': clean(settings),
+      'Historique grades': clean(history.map(h => ({ membre: nameOf(h.member_id), ...h }))),
+      'Lien séances-programme': clean(links),
     };
     const wb = XLSX.utils.book_new();
     for (const [name, rows] of Object.entries(sheets)) {
@@ -1537,13 +1553,88 @@ async function downloadBackup(btn) {
       ws['!cols'] = keys.map(k => ({ wch: Math.min(40, Math.max(k.length, ...rows.slice(0, 50).map(r => String(r[k] ?? '').length)) + 2) }));
       XLSX.utils.book_append_sheet(wb, ws, name);
     }
-    const stamp = isoDay(new Date());
+    const stamp = new Date().toISOString().slice(0, 16).replace('T', '-').replace(':', 'h');
     XLSX.writeFile(wb, `Defendr-sauvegarde-${stamp}.xlsx`);
     try { localStorage.setItem(BACKUP_KEY, new Date().toISOString()); } catch {}
     toast('Sauvegarde téléchargée');
-    const info = btn.previousElementSibling; if (info) info.innerHTML = lastBackupText();
-  } catch (e) { fail(e); }
-  finally { btn.disabled = false; btn.innerHTML = label; }
+    const info = btn?.previousElementSibling; if (info) info.innerHTML = lastBackupText();
+    return true;
+  } catch (e) { fail(e); return false; }
+  finally { if (btn) { btn.disabled = false; btn.innerHTML = label; } }
+}
+
+/* ---------- Restauration ---------- */
+const BOOL_COLS = new Set(['medical_certificate', 'qss', 'medical_waiver', 'other_defense_sport', 'consent_image', 'consent_data', 'rules_read', 'rules_accepted', 'insurance_informed', 'parental_authorization', 'present', 'done', 'bank_checked', 'archived', 'is_active']);
+const ARRAY_COLS = new Set(['revenue_types', 'expense_categories', 'rooms']);
+const DATE_COLS = new Set(['birth_date', 'registration_date', 'medical_waiver_validity', 'course_date', 'payment_date', 'due_date', 'expense_date', 'changed_on']);
+const TIME_COLS = new Set(['start_time', 'end_time', 'default_start_time', 'default_end_time']);
+const PHONE_COLS = new Set(['phone', 'emergency_phone', 'guardian_phone', 'whatsapp_number']);
+
+function normalizeCell(k, v) {
+  if (v === undefined || v === null) return null;
+  if (BOOL_COLS.has(k)) return v === true || /^(oui|true|vrai|1)$/i.test(String(v).trim());
+  if (ARRAY_COLS.has(k)) return String(v).trim() ? String(v).split(' | ').map(x => x.trim()).filter(Boolean) : [];
+  if (v instanceof Date) {
+    if (TIME_COLS.has(k)) return `${pad2(v.getHours())}:${pad2(v.getMinutes())}:00`;
+    if (DATE_COLS.has(k)) return isoDay(v);
+    return v.toISOString();
+  }
+  if (PHONE_COLS.has(k) && typeof v === 'number') { const s = String(v); return /^\d{9}$/.test(s) ? '0' + s : s; }
+  if (typeof v === 'string' && v.trim() === '') return null;
+  return v;
+}
+
+async function readBackupFile(file) {
+  const XLSX = await import(XLSX_URL);
+  const wb = XLSX.read(await file.arrayBuffer(), { cellDates: true });
+  if (!wb.SheetNames.includes('Membres')) throw new Error('Ce fichier n’est pas une sauvegarde Defendr (onglet « Membres » introuvable).');
+  const payload = {}, counts = {};
+  for (const [sheet, table] of Object.entries(BACKUP_SHEETS)) {
+    if (!wb.Sheets[sheet]) continue;
+    const rows = XLSX.utils.sheet_to_json(wb.Sheets[sheet], { raw: true })
+      .filter(r => !('info' in r && Object.keys(r).length === 1))
+      .map(r => Object.fromEntries(Object.entries(r).map(([k, v]) => [k, normalizeCell(k, v)])))
+      // Colonnes absentes d'une ancienne sauvegarde : valeurs par défaut plutôt que vides
+      .map(r => { for (const c of BOOL_COLS) if (r[c] == null) r[c] = c === 'is_active'; for (const c of ARRAY_COLS) if (r[c] == null) r[c] = []; return r; });
+    payload[table] = rows; counts[sheet] = rows.length;
+  }
+  if (payload.members.some(m => !m.id || !m.first_name)) throw new Error('Onglet « Membres » incomplet : chaque ligne doit avoir un id et un prénom.');
+  return { payload, counts, missing: Object.keys(BACKUP_SHEETS).filter(s => !(s in counts)) };
+}
+
+async function restoreFromFile(file) {
+  let parsed;
+  try { parsed = await readBackupFile(file); } catch (e) { return fail(e); }
+  const { payload, counts, missing } = parsed;
+  const dateInName = file.name.match(/(\d{4}-\d{2}-\d{2})/)?.[1];
+  const total = payload.payments?.filter(p => p.status === 'payé' && !p.archived).reduce((s, p) => s + Number(p.amount || 0), 0) || 0;
+  openModal({
+    title: 'Restaurer une sauvegarde',
+    body: `
+      <div class="alert error"><strong>Attention :</strong> toutes les données actuelles (membres, paiements, dépenses, séances, présences, planification, grades, paramètres) seront <strong>remplacées</strong> par celles du fichier. Les comptes de l’équipe et les fichiers de cours sont conservés.</div>
+      <p style="margin:0 0 8px">Fichier : <strong>${esc(file.name)}</strong>${dateInName ? ` · sauvegarde du <strong>${fmtDate(dateInName)}</strong>` : ''}</p>
+      <table class="table small"><tbody>${Object.entries(counts).map(([k, n]) => `<tr><td>${esc(k)}</td><td style="text-align:right"><strong>${n}</strong></td></tr>`).join('')}
+        <tr><td>Total encaissé dans le fichier</td><td style="text-align:right"><strong>${fmtMoney(total)}</strong></td></tr></tbody></table>
+      ${missing.length ? `<p class="small muted">Onglets absents de ce fichier (ancienne sauvegarde) : ${esc(missing.join(', '))}. Ces informations seront vides après la restauration.</p>` : ''}
+      <p class="small">Par sécurité, une <strong>sauvegarde de l’état actuel</strong> sera téléchargée automatiquement juste avant.</p>
+      <div class="field"><label for="rs-confirm">Pour confirmer, tapez <strong>RESTAURER</strong></label><input class="input" id="rs-confirm" autocomplete="off" autocapitalize="characters"></div>`,
+    foot: `<button class="btn" data-close>Annuler</button><button class="btn btn-primary" id="rs-go" disabled>Restaurer</button>`,
+    onMount: root => {
+      const go = $('#rs-go', root);
+      $('#rs-confirm', root).oninput = e => { go.disabled = e.target.value.trim().toUpperCase() !== 'RESTAURER'; };
+      go.onclick = async () => {
+        go.disabled = true; go.textContent = 'Sauvegarde de l’état actuel…';
+        if (!await downloadBackup(null)) { go.textContent = 'Restaurer'; go.disabled = false; return toast('La sauvegarde de sécurité a échoué : restauration annulée.', 'error'); }
+        go.textContent = 'Restauration…';
+        const { data, error } = await sb.rpc('restore_backup', { payload });
+        if (error) { go.textContent = 'Restaurer'; go.disabled = false; return fail(error); }
+        closeModal();
+        await loadRefs().catch(() => {});
+        toast(`Restauration terminée : ${data.membres} membres, ${data.paiements} paiements, ${data.presences} présences`);
+        location.hash = '#/'; route();
+      };
+    },
+  });
 }
 
 /* =====================================================================
