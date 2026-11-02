@@ -20,5 +20,13 @@
   <div id="modal-root"></div>
   <div id="toast-root"></div>
   <script type="module" src="app.js"></script>
+  <script>
+    // Recharge automatiquement l'appli quand une nouvelle version est publiée
+    if ('serviceWorker' in navigator) {
+      let reloaded = false;
+      navigator.serviceWorker.addEventListener('controllerchange', () => { if (!reloaded) { reloaded = true; location.reload(); } });
+      setInterval(() => navigator.serviceWorker.getRegistration().then(r => r && r.update()), 60 * 60 * 1000);
+    }
+  </script>
 </body>
 </html>

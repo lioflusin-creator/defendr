@@ -1,6 +1,6 @@
 // Mise en cache de l'appli pour un démarrage rapide sur téléphone.
 // Les données (Supabase) ne sont jamais mises en cache : elles restent toujours à jour.
-const VERSION = 'defendr-v15';
+const VERSION = 'defendr-v16';
 const SHELL = ['./', 'index.html', 'style.css', 'app.js', 'config.js', 'manifest.webmanifest', 'icons/icon-192.png', 'icons/apple-touch-icon.png'];
 
 self.addEventListener('install', e => {
@@ -14,9 +14,9 @@ self.addEventListener('fetch', e => {
   if (e.request.method !== 'GET' || url.origin !== location.origin) return;
   // Réseau d'abord (pour toujours avoir la dernière version), cache en secours hors connexion.
   e.respondWith(
-    fetch(e.request).then(res => {
+    fetch(e.request.url, { cache: 'no-cache', credentials: 'same-origin' }).then(res => {
       const copy = res.clone();
-      caches.open(VERSION).then(c => c.put(e.request, copy));
+      if (res.ok) caches.open(VERSION).then(c => c.put(e.request, copy));
       return res;
     }).catch(() => caches.match(e.request).then(r => r || caches.match('index.html')))
   );
