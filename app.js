@@ -690,12 +690,19 @@ async function viewMember(view, id) {
         ${att.length ? `<div class="mt">${att.slice(0, 15).map(a => `<div class="bday"><div style="flex:1"><div style="font-weight:600">${esc(a.title)}</div><div class="small muted">${fmtDate(a.course_date)}</div></div>${a.present ? '<span class="badge ok">Présent</span>' : '<span class="badge">Absent</span>'}</div>`).join('')}${att.length > 15 ? `<div class="small muted mt">+ ${att.length - 15} séance(s) plus ancienne(s)</div>` : ''}</div>` : ''}
       </div>
     </div>
-    <div class="card card-pad mt"><div class="row between"><h2 style="margin:0">Parcours de grades</h2>${isAdmin() && nextLevel(m.level_id) ? `<button class="btn btn-sm" id="promote">${icon('up')}Passage de grade</button>` : ''}</div>
-      <div class="small muted">Niveau actuel : <strong>${esc(levelName(m.level_id))}</strong></div>
-      ${grades?.length ? `<div class="mt">${grades.map(g => `<div class="bday"><div style="flex:1"><div style="font-weight:600">${esc(g.from_level_id ? levelName(g.from_level_id) : '—')} → ${esc(g.to_level_id ? levelName(g.to_level_id) : '—')}</div>${g.notes ? `<div class="small muted">${esc(g.notes)}</div>` : ''}</div><span class="small muted">${fmtDate(g.changed_on)}</span></div>`).join('')}</div>` : '<div class="small muted mt">Aucun passage de grade enregistré pour l’instant.</div>'}
-    </div>
+    ${(() => {
+      const ordered = (grades || []).slice().sort((a, b) => b.changed_on.localeCompare(a.changed_on));
+      const current = ordered.find(g => g.to_level_id === m.level_id);
+      return `<div class="card card-pad mt"><div class="row between wrap" style="gap:8px"><h2 style="margin:0">Parcours de grades</h2>
+        ${isAdmin() ? `<div class="row" style="gap:6px"><button class="btn btn-sm" id="add-grade">${icon('plus')}Ajouter un grade passé</button>${nextLevel(m.level_id) ? `<button class="btn btn-sm btn-primary" id="promote">${icon('up')}Passage de grade</button>` : ''}</div>` : ''}</div>
+      <div class="small mt">Niveau actuel : <strong>${esc(levelName(m.level_id))}</strong>${m.level_id ? (current ? ` · obtenu le <strong>${fmtDate(current.changed_on)}</strong>` : ' · <span class="muted">date d’obtention non renseignée</span>') : ''}</div>
+      ${ordered.length ? `<div class="mt">${ordered.map(g => `<div class="bday"><div style="flex:1"><div style="font-weight:600">${g.from_level_id ? esc(levelName(g.from_level_id)) + ' → ' : ''}${esc(g.to_level_id ? levelName(g.to_level_id) : '—')}</div>${g.notes ? `<div class="small muted">${esc(g.notes)}</div>` : ''}</div><span class="small muted">${fmtDate(g.changed_on)}</span>${isAdmin() ? `<button class="icon-btn" data-grade="${g.id}" aria-label="Modifier">${icon('edit')}</button>` : ''}</div>`).join('')}</div>`
+        : `<div class="small muted mt">Aucun grade enregistré. ${isAdmin() ? 'Utilisez « Ajouter un grade passé » pour noter quand il a obtenu ses niveaux avant l’arrivée de la nouvelle appli.' : ''}</div>`}
+    </div>`; })()}
     <div class="mt"><button class="btn btn-danger btn-sm" id="del">${icon('trash')}Supprimer ce membre</button></div>`;
   $('#promote') && ($('#promote').onclick = () => promoteForm(m, () => route()));
+  $('#add-grade') && ($('#add-grade').onclick = () => gradeEntryForm(m, null));
+  $$('[data-grade]', view).forEach(b => b.onclick = () => gradeEntryForm(m, grades.find(g => g.id === b.dataset.grade)));
   $('#edit').onclick = () => memberForm(m, () => route());
   $('#add-pay') && ($('#add-pay').onclick = () => paymentForm(null, { member_id: m.id, amount: due > 0 ? due : m.fee_amount }));
   $('#attest') && ($('#attest').onclick = () => printAttestation(m, seasonPays.filter(p => p.status === 'payé' && !p.archived), season));
@@ -1319,11 +1326,12 @@ async function gradeSection(box) {
   const sessions = await seasonSessionsWithCall();
   const [mr, hr, ar] = await Promise.all([
     sb.from('members').select('id, first_name, last_name, status, level_id, registration_date').eq('status', 'actif'),
-    sb.from('level_history').select('member_id, changed_on').order('changed_on', { ascending: false }),
+    sb.from('level_history').select('member_id, to_level_id, changed_on').order('changed_on', { ascending: false }),
     sessions.length ? sb.from('attendances').select('course_id, member_id').eq('present', true).in('course_id', sessions.map(s => s.id)) : { data: [] },
   ]);
   for (const r of [mr, hr, ar]) if (r.error) throw r.error;
-  const lastChange = {}; hr.data.forEach(h => { if (!lastChange[h.member_id]) lastChange[h.member_id] = h.changed_on; });
+  const lvlOf = Object.fromEntries(mr.data.map(m => [m.id, m.level_id]));
+  const lastChange = {}; hr.data.forEach(h => { if (!lastChange[h.member_id] && h.to_level_id === lvlOf[h.member_id]) lastChange[h.member_id] = h.changed_on; });
   const byM = {}; ar.data.forEach(a => (byM[a.member_id] ||= new Set()).add(a.course_id));
   const minRate = S.settings?.threshold_regulier ?? 45;
   const rows = mr.data.map(m => {
@@ -1349,6 +1357,37 @@ async function gradeSection(box) {
       </div>`).join('') : '<div class="empty">Tous les adhérents actifs sont au niveau le plus élevé.</div>'}</div></div>`;
   $('#g-months', box).onchange = e => { S.gradeMonths = Number(e.target.value); gradeSection(box).catch(fail); };
   $$('[data-promote]', box).forEach(b => b.onclick = () => promoteForm(rows.find(r => r.m.id === b.dataset.promote).m, () => gradeSection(box).catch(fail)));
+}
+
+/* Saisie ou correction d'un grade obtenu (sans changer le niveau actuel du membre) */
+function gradeEntryForm(m, g) {
+  const levels = S.levels.slice().sort((a, b) => a.rank - b.rank);
+  const v = g || { to_level_id: m.level_id, changed_on: '' };
+  openModal({
+    title: g ? 'Modifier le grade' : 'Ajouter un grade passé', size: 'sm',
+    body: `<form id="ge"><p class="small muted" style="margin-top:0">Pour noter quand <strong>${esc(m.first_name)}</strong> a obtenu un niveau. Cela ne change pas son niveau actuel.</p>
+      <div class="field"><label for="ge-l">Niveau obtenu *</label><select class="input" id="ge-l" name="to_level_id">${levels.map(l => `<option value="${l.id}" ${l.id === v.to_level_id ? 'selected' : ''}>${l.rank}. ${esc(l.name)}</option>`).join('')}</select></div>
+      <div class="field"><label for="ge-d">Date d’obtention *</label><input class="input" id="ge-d" name="changed_on" type="date" value="${esc(v.changed_on || '')}"><span class="help">Si vous ne connaissez que l’année, mettez par exemple le 1er juin de cette année.</span></div>
+      <div class="field"><label for="ge-n">Remarques (facultatif)</label><input class="input" id="ge-n" name="notes" value="${esc(v.notes || '')}" placeholder="ex : examen de fin de saison"></div></form>`,
+    foot: `${g ? `<button class="icon-btn" id="ge-del" aria-label="Supprimer" title="Supprimer">${icon('trash')}</button>` : ''}<button class="btn" data-close>Annuler</button><button class="btn btn-primary" id="ge-save">Enregistrer</button>`,
+    onMount: r => {
+      $('#ge-save', r).onclick = async () => {
+        const d = readForm($('#ge', r));
+        if (!d.to_level_id || !d.changed_on) return toast('Le niveau et la date sont obligatoires.', 'error');
+        const to = levels.find(l => l.id === d.to_level_id);
+        d.from_level_id = levels.filter(l => l.rank < to.rank).sort((a, b) => b.rank - a.rank)[0]?.id || null;
+        const { error } = g ? await sb.from('level_history').update(d).eq('id', g.id) : await sb.from('level_history').insert({ ...d, member_id: m.id });
+        if (error) return fail(error);
+        closeModal(); toast('Grade enregistré'); route();
+      };
+      $('#ge-del', r) && ($('#ge-del', r).onclick = async () => {
+        if (!await confirmBox('Supprimer ce grade', 'Supprimer cette ligne du parcours ? Le niveau actuel du membre ne change pas.')) return;
+        const { error } = await sb.from('level_history').delete().eq('id', g.id);
+        if (error) return fail(error);
+        toast('Grade supprimé'); route();
+      });
+    },
+  });
 }
 
 function promoteForm(m, onDone) {
