@@ -329,17 +329,25 @@ function viewSoon(view, item) {
 /* =====================================================================
    Tableau de bord
    ===================================================================== */
+/* Justificatif de santé : un certificat médical OU un QSS rempli (« tout non ») suffit */
+const hasHealthDoc = m => !!(m.medical_certificate || m.qss);
+function healthBadge(m, short = false) {
+  if (m.medical_certificate) return `<span class="badge ok">${short ? 'Certificat' : 'Certificat ✓'}</span>`;
+  if (m.qss) return `<span class="badge ok">${short ? 'QSS' : 'QSS ✓'}</span>`;
+  return `<span class="badge warn">${short ? 'Certificat' : 'Certificat / QSS manquant'}</span>`;
+}
+
 /* Documents et autorisations à relancer pour un membre actif */
 function memberIssues(m) {
   if (m.status !== 'actif') return [];
   const out = [], today = new Date(), soon = isoDay(new Date(today.getFullYear(), today.getMonth(), today.getDate() + 30)), now = isoDay(today);
   const waiverValid = m.medical_waiver && m.medical_waiver_validity && m.medical_waiver_validity >= now;
-  if (!m.medical_certificate) {
-    if (m.medical_waiver && m.medical_waiver_validity && m.medical_waiver_validity < now) out.push({ label: `Décharge expirée le ${fmtDate(m.medical_waiver_validity)}`, cls: 'danger', ask: 'un certificat médical (ta décharge a expiré)' });
-    else if (waiverValid && m.medical_waiver_validity <= soon) out.push({ label: `Décharge expire le ${fmtDate(m.medical_waiver_validity)}`, cls: 'warn', ask: `un certificat médical avant le ${fmtDay(m.medical_waiver_validity)}` });
-    else if (!waiverValid) out.push({ label: 'Certificat manquant', cls: 'warn', ask: 'un certificat médical' });
+  if (!hasHealthDoc(m)) {
+    const ask = 'un certificat médical ou le questionnaire de santé (QSS)';
+    if (m.medical_waiver && m.medical_waiver_validity && m.medical_waiver_validity < now) out.push({ label: `Décharge expirée le ${fmtDate(m.medical_waiver_validity)}`, cls: 'danger', ask: `${ask} (ta décharge a expiré)` });
+    else if (waiverValid && m.medical_waiver_validity <= soon) out.push({ label: `Décharge expire le ${fmtDate(m.medical_waiver_validity)}`, cls: 'warn', ask: `${ask} avant le ${fmtDay(m.medical_waiver_validity)}` });
+    else if (!waiverValid) out.push({ label: 'Certificat / QSS manquant', cls: 'warn', ask });
   }
-  if (!m.qss) out.push({ label: 'QSS manquant', cls: '', ask: 'le questionnaire de santé (QSS)' });
   const age = ageOf(m.birth_date);
   if (age != null && age < 18) {
     if (!m.parental_authorization) out.push({ label: 'Autorisation parentale', cls: 'danger', ask: 'l’autorisation parentale signée' });
@@ -365,7 +373,7 @@ async function viewDashboard(view) {
   for (const r of [mr, cr, pr, er]) if (r?.error) throw r.error;
   const members = mr.data;
   const active = members.filter(m => m.status === 'actif');
-  const noCert = active.filter(m => !m.medical_certificate);
+  const noCert = active.filter(m => !hasHealthDoc(m));
   const month = new Date().getMonth();
   const bdays = members.filter(m => m.status === 'actif' && isBirthdayMonth(m.birth_date, month))
     .sort((a, b) => new Date(a.birth_date).getDate() - new Date(b.birth_date).getDate());
@@ -406,7 +414,7 @@ async function viewDashboard(view) {
         return `<div class="bday"><a href="#/membres/${m.id}" style="flex:1;text-decoration:none"><div style="font-weight:600">${esc(fullName(m))}</div><div class="small muted">reste ${fmtMoney(due)} sur ${fmtMoney(m.fee_amount)}</div></a>${link ? `<a class="btn btn-sm" href="${esc(link)}" target="_blank" rel="noopener">${icon('chat')}Relancer</a>` : ''}</div>`; }).join('') : '<div class="empty" style="padding:16px">Toutes les cotisations sont réglées 👏</div>'}</div>
     </div>`;
   } else {
-    money = `<div class="card stat"><div class="label">Certificats manquants</div><div class="value">${noCert.length}</div><div class="hint">membres actifs</div></div>
+    money = `<div class="card stat"><div class="label">Certificats / QSS manquants</div><div class="value">${noCert.length}</div><div class="hint">membres actifs</div></div>
       <div class="card stat"><div class="label">Anniversaires</div><div class="value">${bdays.length}</div><div class="hint">ce mois-ci</div></div>`;
   }
 
@@ -433,7 +441,7 @@ async function viewDashboard(view) {
       </div>
       <div class="card card-pad"><h2>Disciplines</h2>
         ${byDisc.length ? `<div class="bars">${byDisc.map(x => `<div class="bar-row"><span>${esc(x.name)}</span><div class="bar"><span style="width:${(x.n / maxDisc) * 100}%"></span></div><strong>${x.n}</strong></div>`).join('')}</div>` : '<div class="empty">Aucun membre actif rattaché à une discipline.</div>'}
-        ${noCert.length && isAdmin() ? `<div class="mt"><a href="#/membres" data-filter="certificat" class="badge warn" style="text-decoration:none">${noCert.length} certificat(s) médical(aux) manquant(s)</a></div>` : ''}
+        ${noCert.length && isAdmin() ? `<div class="mt"><a href="#/membres" data-filter="certificat" class="badge warn" style="text-decoration:none">${noCert.length} certificat(s) ou QSS manquant(s)</a></div>` : ''}
       </div>
       ${lastPays}
     </div>`;
@@ -471,7 +479,7 @@ async function viewMembers(view) {
     { k: 'actifs', label: 'Actifs', fn: m => m.status === 'actif' },
     ...(isAdmin() ? [{ k: 'impayes', label: 'Soldes impayés', fn: m => m.status === 'actif' && balance(m) > 0 }] : []),
     { k: 'relancer', label: 'À relancer', fn: m => memberIssues(m).length > 0 },
-    { k: 'certificat', label: 'Certificat manquant', fn: m => m.status === 'actif' && !m.medical_certificate },
+    { k: 'certificat', label: 'Certificat / QSS manquant', fn: m => m.status === 'actif' && !hasHealthDoc(m) },
     { k: 'anniversaires', label: 'Anniversaires du mois', fn: m => isBirthdayMonth(m.birth_date) },
     { k: 'inactifs', label: 'Inactifs', fn: m => m.status === 'inactif' },
   ];
@@ -492,22 +500,21 @@ async function viewMembers(view) {
     const rows = members.filter(f.fn).filter(m => !q || [fullName(m), m.email, m.phone].join(' ').toLowerCase().normalize('NFD').replace(/\p{Diacritic}/gu, '').includes(q));
     const box = $('#m-list');
     if (!rows.length) { box.innerHTML = `<div class="empty">${members.length ? 'Aucun membre ne correspond.' : 'Aucun membre pour l’instant. Ajoutez le premier avec « Nouveau membre ».'}</div>`; return; }
-    const certBadge = m => m.medical_certificate ? '<span class="badge ok">Certificat ✓</span>' : '<span class="badge warn">Certificat manquant</span>';
     const statusBadge = m => m.status === 'actif' ? '<span class="badge ok">Actif</span>' : '<span class="badge">Inactif</span>';
     box.innerHTML = `
-      <div class="table-wrap only-desktop"><table class="table"><thead><tr><th>Nom</th><th>Contact</th><th>Discipline</th><th>Niveau</th><th>Cert. médical</th>${isAdmin() ? '<th>Solde</th>' : ''}<th>Statut</th></tr></thead><tbody>
+      <div class="table-wrap only-desktop"><table class="table"><thead><tr><th>Nom</th><th>Contact</th><th>Discipline</th><th>Niveau</th><th>Santé</th>${isAdmin() ? '<th>Solde</th>' : ''}<th>Statut</th></tr></thead><tbody>
         ${rows.map(m => `<tr class="clickable" data-id="${m.id}">
           <td><div class="person"><div class="avatar">${esc(initials(m))}</div><div><div class="name">${esc(fullName(m))}</div>${m.birth_date ? `<div class="meta">${ageOf(m.birth_date)} ans</div>` : ''}</div></div></td>
           <td class="small">${esc(m.phone || '')}<div class="muted">${esc(m.email || '')}</div></td>
           <td>${esc(discName(m.discipline_id))}</td><td>${esc(levelName(m.level_id))}</td>
-          <td>${certBadge(m)}${m.qss ? ' <span class="badge">QSS</span>' : ''}</td>
+          <td>${healthBadge(m)}</td>
           ${isAdmin() ? `<td>${balance(m) > 0 ? `<span class="badge danger">${fmtMoney(balance(m))}</span>` : '<span class="badge ok">À jour</span>'}</td>` : ''}
           <td>${statusBadge(m)}</td></tr>`).join('')}
       </tbody></table></div>
       <div class="list only-mobile">${rows.map(m => `<div class="list-item" data-id="${m.id}">
           <div class="avatar">${esc(initials(m))}</div>
           <div class="grow"><div style="font-weight:600">${esc(fullName(m))}</div><div class="small muted">${esc(discName(m.discipline_id))} · ${esc(levelName(m.level_id))}</div></div>
-          <div class="right">${m.status !== 'actif' ? statusBadge(m) : (!m.medical_certificate ? '<span class="badge warn">Certificat</span>' : '')}${isAdmin() && balance(m) > 0 ? `<span class="badge danger">${fmtMoney(balance(m))}</span>` : ''}</div>
+          <div class="right">${m.status !== 'actif' ? statusBadge(m) : (!hasHealthDoc(m) ? healthBadge(m, true) : '')}${isAdmin() && balance(m) > 0 ? `<span class="badge danger">${fmtMoney(balance(m))}</span>` : ''}</div>
         </div>`).join('')}</div>`;
     $$('[data-id]', box).forEach(r => r.onclick = () => go('/membres/' + r.dataset.id));
   };
@@ -556,7 +563,7 @@ function memberForm(m, onSaved) {
     ${inp('fee_amount', 'Montant cotisation (€)', 'number')}
     <div class="fieldset-title">Santé et documents</div>
     ${chk('medical_certificate', 'Certificat médical fourni')}
-    ${chk('qss', 'QSS (Questionnaire de Santé Sportive) rempli')}
+    ${chk('qss', 'QSS (Questionnaire de Santé Sportive) rempli : vaut certificat médical')}
     ${chk('medical_waiver', 'Décharge médicale signée')}
     ${inp('medical_waiver_validity', 'Décharge valable jusqu’au', 'date')}
     <div class="field full"><label for="mf-medical_notes">Notes médicales</label><textarea class="input" id="mf-medical_notes" name="medical_notes">${esc(v.medical_notes ?? '')}</textarea><span class="help">Ne notez que ce qui est utile à la sécurité pendant les cours.</span></div>
@@ -663,7 +670,7 @@ async function viewMember(view, id) {
         <dt>Autre sport de défense</dt><dd>${m.other_defense_sport ? 'Oui' + (m.other_defense_sport_details ? ' — ' + esc(m.other_defense_sport_details) : '') : 'Non'}</dd>
       </dl></div>
       <div class="card card-pad"><h2>Santé et documents</h2><dl class="kv">
-        <dt>Certificat médical</dt><dd>${yes(m.medical_certificate)}</dd><dt>QSS</dt><dd>${yes(m.qss)}</dd>
+        <dt>Justificatif de santé</dt><dd>${healthBadge(m)}</dd><dt>Certificat médical</dt><dd>${yes(m.medical_certificate)}</dd><dt>QSS</dt><dd>${yes(m.qss)}</dd>
         <dt>Décharge médicale</dt><dd>${yes(m.medical_waiver)}${m.medical_waiver_validity ? ' · jusqu’au ' + fmtDate(m.medical_waiver_validity) : ''}</dd><dt>Notes médicales</dt><dd>${esc(m.medical_notes || '—')}</dd>
       </dl></div>
       <div class="card card-pad"><h2>Consentements</h2><dl class="kv">
