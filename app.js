@@ -875,9 +875,15 @@ async function viewSettings(view) {
 
       <div class="card card-pad">
         <h2>Sauvegarde</h2>
-        <p class="small muted">Téléchargez un fichier Excel contenant toutes les données du club : membres, paiements, dépenses, séances, présences, planification et paramètres. Conseillé une fois par mois, à garder en lieu sûr (il contient des données personnelles et médicales).</p>
+        <div class="section-title" style="font-size:13px">1. Les données du club</div>
+        <p class="small muted">Un fichier Excel avec toutes les données : membres, paiements, dépenses, séances, présences, planification et paramètres. Conseillé une fois par mois, à garder en lieu sûr (il contient des données personnelles et médicales).</p>
         <div class="small mb">${lastBackupText()}</div>
-        <button class="btn btn-primary" id="backup">${icon('file')}Télécharger une sauvegarde</button>
+        <button class="btn btn-primary" id="backup">${icon('file')}Télécharger les données</button>
+        <div class="section-title mt" style="font-size:13px">2. Le logiciel</div>
+        <p class="small muted">Un fichier .zip avec tout le logiciel : les écrans, le fonctionnement, l’icône et la structure de la base de données. Il ne contient aucune donnée d’adhérent. Chaque version est aussi conservée automatiquement sur GitHub.</p>
+        <div class="row wrap" style="gap:8px"><a class="btn" href="https://github.com/lioflusin-creator/defendr/archive/refs/heads/main.zip" download>${icon('file')}Télécharger le logiciel</a>
+          <a class="btn btn-sm" href="https://github.com/lioflusin-creator/defendr/commits/main" target="_blank" rel="noopener">Historique des versions</a></div>
+        <p class="small muted mt">Avec ces deux fichiers, le club peut tout reconstruire si besoin.</p>
       </div>
 
       <div class="card card-pad">
