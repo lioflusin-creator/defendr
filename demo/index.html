@@ -1,0 +1,48 @@
+<!doctype html>
+<html lang="fr">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <title>Defendr — démonstration</title>
+  <meta name="description" content="Démonstration de Defendr, logiciel de gestion de club de self-défense, avec un club fictif.">
+  <meta name="theme-color" content="#14181f">
+  <meta name="robots" content="noindex">
+  <link rel="icon" type="image/png" href="../icons/icon-192.png">
+  <link rel="apple-touch-icon" href="../icons/apple-touch-icon.png">
+  <link rel="stylesheet" href="../style.css">
+  <!-- La démo utilise exactement le même logiciel, branché sur une base fictive -->
+  <script>window.DEFENDR_DEMO = true;</script>
+  <script type="importmap">
+    { "imports": { "https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/+esm": "./mock-supabase.js" } }
+  </script>
+  <style>
+    .demo-bar { position: fixed; top: 0; left: 0; right: 0; z-index: 60; height: 34px; display: flex; align-items: center; justify-content: center; gap: 10px;
+      background: #f2c94c; color: #1a1d23; font-size: 13px; font-weight: 600; padding: 0 12px; padding-top: env(safe-area-inset-top); box-sizing: content-box; }
+    .demo-bar button { background: #1a1d23; color: #fff; border: 0; border-radius: 6px; padding: 4px 10px; font: inherit; font-size: 12px; cursor: pointer; }
+    .demo-bar .info { opacity: .8; font-weight: 400; }
+    body { padding-top: calc(34px + env(safe-area-inset-top)); }
+    .sidebar { top: calc(34px + env(safe-area-inset-top)) !important; height: calc(100vh - 34px - env(safe-area-inset-top)) !important; }
+    .topbar { top: calc(34px + env(safe-area-inset-top)) !important; padding-top: 10px !important; }
+    .auth { min-height: calc(100vh - 34px); }
+    .demo-bar .short { display: none; }
+    @media (max-width: 600px) { .demo-bar .info, .demo-bar .long { display: none; } .demo-bar .short { display: inline; } }
+  </style>
+</head>
+<body>
+  <div class="demo-bar" role="status">
+    <span>🥋 <span class="long">Démonstration · club et personnes fictifs</span><span class="short">Démo · club fictif</span></span>
+    <span class="info">Vos essais restent sur votre appareil.</span>
+    <button type="button" id="demo-reset">Réinitialiser</button>
+  </div>
+  <div id="app"><div class="splash"><div class="logo-mark">D</div></div></div>
+  <div id="modal-root"></div>
+  <div id="toast-root"></div>
+  <script type="module">
+    import { resetDemo } from './mock-supabase.js';
+    document.getElementById('demo-reset').onclick = () => {
+      if (confirm('Remettre la démo à zéro ? Toutes vos modifications d’essai seront effacées.')) { resetDemo(); location.hash = '#/'; location.reload(); }
+    };
+  </script>
+  <script type="module" src="../app.js"></script>
+</body>
+</html>

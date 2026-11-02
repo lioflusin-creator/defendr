@@ -1502,7 +1502,7 @@ async function printAgReport({ sessions, rows, avgPresent, avgRate, cats }) {
 /* =====================================================================
    Sauvegarde Excel
    ===================================================================== */
-const BACKUP_KEY = 'defendr-derniere-sauvegarde';
+const BACKUP_KEY = window.DEFENDR_DEMO ? 'defendr-demo-derniere-sauvegarde' : 'defendr-derniere-sauvegarde';
 const lastBackup = () => { try { return localStorage.getItem(BACKUP_KEY); } catch { return null; } };
 function lastBackupText() {
   const d = lastBackup();
