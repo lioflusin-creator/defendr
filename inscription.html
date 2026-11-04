@@ -120,7 +120,9 @@
 
   <script type="module">
     import { createClient } from 'https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/+esm';
-    import { SUPABASE_URL, SUPABASE_ANON_KEY } from './config.js';
+    import { SUPABASE_URL, SUPABASE_ANON_KEY, SITE } from './config.js';
+    const siteOk = !SITE || /^(localhost|127\.0\.0\.1)$/.test(location.hostname) || (location.host + location.pathname).toLowerCase().startsWith(String(SITE).toLowerCase().replace(/^https?:\/\//, '').replace(/\/+$/, ''));
+    if (!siteOk) { document.getElementById('reg').innerHTML = '<div class="card done-box"><h1 style="font-family:var(--display);text-transform:uppercase">Page pas encore disponible</h1><p class="muted">Le club n’a pas encore terminé l’installation de son logiciel.</p></div>'; throw new Error('config.js à adapter'); }
     const sb = createClient(SUPABASE_URL, SUPABASE_ANON_KEY, { auth: { persistSession: false } });
     const $ = s => document.querySelector(s);
     const esc = v => String(v ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));

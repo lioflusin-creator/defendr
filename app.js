@@ -1,7 +1,26 @@
 import { createClient } from 'https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/+esm';
-import { SUPABASE_URL, SUPABASE_ANON_KEY } from './config.js';
+import { SUPABASE_URL, SUPABASE_ANON_KEY, SITE } from './config.js';
+
+// Garde-fou pour les copies du logiciel : tant que config.js n'est pas adapté au nouveau club,
+// l'appli ne se connecte pas à la base d'un autre club.
+const SITE_OK = window.DEFENDR_DEMO || !SITE || /^(localhost|127\.0\.0\.1)$/.test(location.hostname)
+  || (location.host + location.pathname).toLowerCase().startsWith(String(SITE).toLowerCase().replace(/^https?:\/\//, '').replace(/\/+$/, ''));
+if (!SITE_OK) {
+  document.getElementById('app').innerHTML = `<div style="max-width:560px;margin:12vh auto;padding:24px;font:16px/1.5 system-ui,sans-serif">
+    <div class="logo-mark" style="margin-bottom:16px">D</div><h1 style="margin:0 0 8px">Defendr n’est pas encore configuré</h1>
+    <p>Cette copie du logiciel doit être reliée à la base de données de votre club : renseignez l’adresse et la clé de votre projet Supabase, ainsi que l’adresse de ce site, dans le fichier <strong>config.js</strong>.</p>
+    <p>Toutes les étapes sont décrites dans le fichier <strong>INSTALLER-NOUVEAU-CLUB.md</strong> du logiciel.</p></div>`;
+  throw new Error('config.js à adapter pour ce club');
+}
 
 const sb = createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
+
+// Dépôt GitHub de ce club (déduit de l'adresse GitHub Pages) pour les boutons de sauvegarde
+const GITHUB_REPO = (() => {
+  const m = location.hostname.match(/^([a-z0-9-]+)\.github\.io$/i); if (!m) return null;
+  const seg = location.pathname.split('/').filter(Boolean)[0];
+  return `https://github.com/${m[1]}/${seg && !seg.includes('.') ? seg : m[1] + '.github.io'}`;
+})();
 
 /* =====================================================================
    État global
@@ -912,7 +931,7 @@ async function viewSettings(view) {
         </div>
         <div class="field"><label for="st-wa">Votre numéro WhatsApp (rappel anniversaires)</label><input class="input" id="st-wa" name="whatsapp_number" type="tel" value="${esc(s.whatsapp_number || '')}" placeholder="06 12 34 56 78"></div>
         <div class="section-title mt">Pour les attestations</div>
-        <div class="field"><label for="st-addr">Adresse du club</label><input class="input" id="st-addr" name="club_address" value="${esc(s.club_address || '')}" placeholder="ex : Gymnase…, 34800 Clermont-l’Hérault"></div>
+        <div class="field"><label for="st-addr">Adresse du club</label><input class="input" id="st-addr" name="club_address" value="${esc(s.club_address || '')}" placeholder="ex : Gymnase…, code postal et ville"></div>
         <div class="form-grid">
           <div class="field"><label for="st-pres">Président(e)</label><input class="input" id="st-pres" name="president_name" value="${esc(s.president_name || '')}"></div>
           <div class="field"><label for="st-legal">N° RNA ou SIRET</label><input class="input" id="st-legal" name="club_legal_id" value="${esc(s.club_legal_id || '')}" placeholder="W343…"></div>
@@ -969,8 +988,8 @@ async function viewSettings(view) {
         <button class="btn btn-primary" id="backup">${icon('file')}Télécharger les données</button>
         <div class="section-title mt" style="font-size:13px">2. Le logiciel</div>
         <p class="small muted">Un fichier .zip avec tout le logiciel : les écrans, le fonctionnement, l’icône et la structure de la base de données. Il ne contient aucune donnée d’adhérent. Chaque version est aussi conservée automatiquement sur GitHub.</p>
-        <div class="row wrap" style="gap:8px"><a class="btn" href="https://github.com/lioflusin-creator/defendr/archive/refs/heads/main.zip" download>${icon('file')}Télécharger le logiciel</a>
-          <a class="btn btn-sm" href="https://github.com/lioflusin-creator/defendr/commits/main" target="_blank" rel="noopener">Historique des versions</a></div>
+        ${GITHUB_REPO ? `<div class="row wrap" style="gap:8px"><a class="btn" href="${GITHUB_REPO}/archive/refs/heads/main.zip" download>${icon('file')}Télécharger le logiciel</a>
+          <a class="btn btn-sm" href="${GITHUB_REPO}/commits/main" target="_blank" rel="noopener">Historique des versions</a></div>` : '<p class="small muted">Le logiciel se télécharge depuis l’hébergement du club.</p>'}
         <p class="small muted mt">Avec ces deux fichiers, le club peut tout reconstruire si besoin.</p>
         ${isPresident() ? `<div class="section-title mt" style="font-size:13px">3. Restaurer</div>
         <p class="small muted">Remet les données du club telles qu’elles étaient dans un fichier de sauvegarde. Réservé au président.</p>
@@ -1009,7 +1028,7 @@ async function viewSettings(view) {
           ${f ? `<button class="icon-btn" data-doc-rm="${d.key}" aria-label="Retirer ${esc(d.label)}">${icon('trash')}</button>` : ''}</div>`; }).join('')}
         <form id="bank-form" class="mt">
           <div class="section-title">Virement : coordonnées du compte du club</div>
-          <div class="field"><label for="st-bh">Titulaire du compte</label><input class="input" id="st-bh" name="bank_holder" value="${esc(s.bank_holder || '')}" placeholder="ex : ASSOC. CŒUR D’HÉRAULT AUTO DÉFENSE"></div>
+          <div class="field"><label for="st-bh">Titulaire du compte</label><input class="input" id="st-bh" name="bank_holder" value="${esc(s.bank_holder || '')}" placeholder="ex : ASSOC. MON CLUB DE SELF-DÉFENSE"></div>
           <div class="field"><label for="st-iban">IBAN</label><input class="input" id="st-iban" name="bank_iban" value="${esc(s.bank_iban || '')}" placeholder="FR76 …" autocomplete="off"></div>
           <div class="form-grid">
             <div class="field"><label for="st-bic">BIC</label><input class="input" id="st-bic" name="bank_bic" value="${esc(s.bank_bic || '')}" autocomplete="off"></div>

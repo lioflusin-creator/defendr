@@ -10,7 +10,7 @@ Ce dossier contient tout le logiciel de gestion du club. Il ne contient aucune d
 
 ## Pour tout reconstruire (par exemple avec l'aide de Claude)
 1. Créer un projet Supabase (région Europe) et exécuter `schema.sql` dans l’éditeur SQL.
-2. Mettre l'adresse et la clé publique du nouveau projet dans `config.js`.
+2. Mettre l'adresse et la clé publique du nouveau projet, ainsi que l'adresse du site (`SITE`), dans `config.js`.
 3. Publier le dossier sur un hébergement de pages web (par exemple GitHub Pages).
 4. Créer son compte dans l'application (le premier compte devient président).
 5. Dans Paramètres → Sauvegarde, utiliser « Restaurer depuis une sauvegarde » avec le dernier fichier Excel.
