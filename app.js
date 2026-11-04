@@ -1604,11 +1604,12 @@ function openPdfDossier() {
       <div class="field"><label for="pd-ln">Nom</label><input class="input" id="pd-ln" name="nom" autocomplete="off"></div>
       <div class="field"><label for="pd-ph">Téléphone WhatsApp</label><input class="input" id="pd-ph" name="tel" type="tel" autocomplete="off" placeholder="06 12 34 56 78"></div>
       <div id="pd-msg"></div></form>`,
-    foot: `<button class="btn" data-close>Fermer</button><button class="btn btn-primary" id="pd-make">${icon('file')}Préparer le PDF</button><button class="btn btn-primary" id="pd-share" hidden>${icon('chat')}Envoyer sur WhatsApp</button>`,
+    foot: `<button class="btn" data-close>Fermer</button><button class="btn btn-primary" id="pd-make">${icon('file')}Préparer le PDF</button><button class="btn" id="pd-chat" hidden>${icon('chat')}Ouvrir la discussion</button><button class="btn btn-primary" id="pd-share" hidden>${icon('up')}Partager le PDF</button>`,
     onMount: root => {
-      const form = $('#pd-f', root), msg = $('#pd-msg', root), make = $('#pd-make', root), share = $('#pd-share', root);
+      const form = $('#pd-f', root), msg = $('#pd-msg', root), make = $('#pd-make', root), share = $('#pd-share', root), chat = $('#pd-chat', root);
       const text = () => { const p = form.prenom.value.trim(); return `Bonjour${p ? ' ' + p : ''},\n\nvoici ton dossier d’inscription au ${S.settings?.club_name || 'club'}${activeSeason() ? ' pour la saison ' + activeSeason().label : ''}.\n\n1. Remplis et signe le PDF (sur ton téléphone ou imprimé).\n2. Joins ton certificat médical ou signe l’attestation de santé (page 3).\n3. Règle la cotisation : virement (coordonnées page 2), chèque ou espèces.\n\nRenvoie-nous le tout ici ou apporte-le au prochain cours. À très vite sur le tatami ! 👊`; };
-      form.oninput = () => { pdfFile = null; share.hidden = true; make.hidden = false; msg.innerHTML = ''; };
+      form.oninput = () => { pdfFile = null; share.hidden = true; chat.hidden = true; make.hidden = false; msg.innerHTML = ''; };
+      chat.onclick = () => { const link = waUrl(form.tel.value.trim(), text().replace('voici ton dossier', 'je t’envoie ton dossier')); if (link) window.open(link, '_blank', 'noopener'); };
       make.onclick = async () => {
         make.disabled = true; make.textContent = 'Préparation…';
         try {
@@ -1617,8 +1618,8 @@ function openPdfDossier() {
           const slug = v => String(v || '').normalize('NFD').replace(/[̀-ͯ]/g, '').replace(/[^A-Za-z0-9]+/g, '_').replace(/^_|_$/g, '');
           const name = ['Dossier_inscription', slug(S.settings?.club_name), slug(d.nom), slug(d.prenom)].filter(Boolean).join('_') + '.pdf';
           pdfFile = new File([bytes], name, { type: 'application/pdf' });
-          make.hidden = true; share.hidden = false;
-          msg.innerHTML = `<div class="alert ${problems.length ? 'error' : 'info'}" style="margin:0">${problems.length ? `PDF prêt, mais ces documents n’ont pas pu être ajoutés : ${esc(problems.join(', '))}. Vérifiez-les dans Documents et paiement de l’inscription.` : 'PDF prêt.'} ${navigator.canShare?.({ files: [pdfFile] }) ? 'Touchez « Envoyer sur WhatsApp » puis choisissez WhatsApp et la personne.' : 'Le PDF va être téléchargé et WhatsApp s’ouvrira avec le message : joignez-y le PDF (trombone → Document).'}</div>`;
+          make.hidden = true; share.hidden = false; chat.hidden = !waLink(d.tel);
+          msg.innerHTML = `<div class="alert ${problems.length ? 'error' : 'info'}" style="margin:0">${problems.length ? `PDF prêt, mais ces documents n’ont pas pu être ajoutés : ${esc(problems.join(', '))}. Vérifiez-les dans Documents et paiement de l’inscription.` : 'PDF prêt.'} ${navigator.canShare?.({ files: [pdfFile] }) ? '<br><br><strong>Partager le PDF</strong> : dans le menu qui s’ouvre, WhatsApp n’est pas toujours en premier. Faites glisser la rangée d’applications vers la gauche, ou touchez « Plus », puis WhatsApp et la personne. Astuce : dans « Plus », touchez « Modifier » et ajoutez WhatsApp aux favoris pour qu’il apparaisse en premier.' + (waLink(d.tel) ? '<br><br>La personne n’est pas dans vos contacts ? Touchez d’abord <strong>Ouvrir la discussion</strong> (WhatsApp s’ouvre sur son numéro avec le message), puis revenez ici pour partager le PDF dans cette discussion.' : '') : 'Le PDF va être téléchargé et WhatsApp s’ouvrira avec le message : joignez-y le PDF (trombone → Document).'}</div>`;
         } catch (e) { fail(e); }
         finally { make.disabled = false; make.innerHTML = `${icon('file')}Préparer le PDF`; }
       };
