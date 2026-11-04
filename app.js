@@ -893,7 +893,8 @@ async function viewSettings(view) {
   if (error) throw error;
   const s = S.settings;
   const num = (name, label, ph = '') => `<div class="field"><label for="st-${name}">${label}</label><input class="input" id="st-${name}" name="${name}" type="number" step="0.01" min="0" inputmode="decimal" value="${esc(s[name] ?? '')}" placeholder="${ph}"></div>`;
-  const tagBox = (key, label, help) => `<div class="field"><label>${label}</label><div class="tags" data-tags="${key}">${(s[key] || []).map((t, i) => `<span class="tag">${esc(t)}<button type="button" data-rm="${key}:${i}" aria-label="Retirer ${esc(t)}">×</button></span>`).join('') || '<span class="small muted">Aucun élément</span>'}</div>
+  const tagVals = key => key === 'plan_sections' ? planSections() : (s[key] || []);
+  const tagBox = (key, label, help) => `<div class="field"><label>${label}</label><div class="tags" data-tags="${key}">${tagVals(key).map((t, i) => `<span class="tag">${esc(t)}<button type="button" data-rm="${key}:${i}" aria-label="Retirer ${esc(t)}">×</button></span>`).join('') || '<span class="small muted">Aucun élément</span>'}</div>
     <div class="tag-add"><input class="input" data-new="${key}" placeholder="${help}" aria-label="Ajouter : ${label}"><button type="button" class="btn" data-add="${key}">Ajouter</button></div></div>`;
 
   view.innerHTML = head('Paramètres', 'Configurez votre club') + `
@@ -920,10 +921,12 @@ async function viewSettings(view) {
       </form>
 
       <div class="card card-pad" id="tags-card">
-        <h2>Catégories & salles</h2>
+        <h2>Catégories, salles et chapitres</h2>
         ${tagBox('revenue_types', 'Types de recettes', 'ex : Cotisation annuelle')}
         ${tagBox('expense_categories', 'Catégories de dépenses', 'ex : Loyer')}
         ${tagBox('rooms', 'Salles disponibles', 'ex : Dojo 1')}
+        ${tagBox('plan_sections', 'Chapitres de la planification annuelle', 'ex : Self-défense verbale')}
+        <p class="small muted" style="margin-top:-4px">Retirer un chapitre ne supprime pas ses éléments déjà saisis : ils restent visibles dans les mois concernés.</p>
       </div>
 
       <form class="card card-pad" id="thr-form">
@@ -1022,8 +1025,12 @@ async function viewSettings(view) {
   const tags = $('#tags-card');
   tags.onclick = async e => {
     const rm = e.target.closest('[data-rm]'), add = e.target.closest('[data-add]');
-    if (rm) { const [k, i] = rm.dataset.rm.split(':'); const arr = [...(S.settings[k] || [])]; arr.splice(+i, 1); if (await save({ [k]: arr }, 'Élément retiré')) route(); }
-    if (add) { const k = add.dataset.add, inp = $(`[data-new="${k}"]`, tags), v = inp.value.trim(); if (!v) return; if (await save({ [k]: [...(S.settings[k] || []), v] }, 'Élément ajouté')) route(); }
+    if (rm) { const [k, i] = rm.dataset.rm.split(':'); const arr = [...tagVals(k)]; arr.splice(+i, 1);
+      if (k === 'plan_sections' && !arr.length) return toast('Gardez au moins un chapitre.', 'error');
+      if (await save({ [k]: arr }, 'Élément retiré')) route(); }
+    if (add) { const k = add.dataset.add, inp = $(`[data-new="${k}"]`, tags), v = inp.value.trim(); if (!v) return;
+      if (tagVals(k).some(x => x.toLowerCase() === v.toLowerCase())) return toast('Cet élément existe déjà.', 'error');
+      if (await save({ [k]: [...tagVals(k), v] }, 'Élément ajouté')) route(); }
   };
   $$('[data-new]', tags).forEach(inp => inp.onkeydown = e => { if (e.key === 'Enter') { e.preventDefault(); $(`[data-add="${inp.dataset.new}"]`, tags).click(); } });
 
@@ -1535,7 +1542,7 @@ async function openRegistrations() {
         const { data: created, error } = await sb.from('members').insert(member).select('id').single();
         if (error) { b.disabled = false; return fail(error); }
         await sb.from('registrations').delete().eq('id', r.id); // la fiche membre remplace la demande
-        closeModal(); toast(`Fiche de ${d.first_name} créée`); go('/membres/' + created.id);
+        closeModal(); toast(`Fiche ${/^[aeiouyhàâäéèêëîïôöùûü]/i.test(d.first_name || '') ? 'd’' : 'de '}${d.first_name} créée`); go('/membres/' + created.id);
       });
       $$('[data-refuse]', root).forEach(b => b.onclick = async () => {
         const r = data.find(x => x.id === b.dataset.refuse);
@@ -1777,7 +1784,7 @@ async function downloadBackup(btn) {
 
 /* ---------- Restauration ---------- */
 const BOOL_COLS = new Set(['medical_certificate', 'qss', 'medical_waiver', 'other_defense_sport', 'consent_image', 'consent_data', 'rules_read', 'rules_accepted', 'insurance_informed', 'parental_authorization', 'present', 'done', 'bank_checked', 'archived', 'is_active']);
-const ARRAY_COLS = new Set(['revenue_types', 'expense_categories', 'rooms']);
+const ARRAY_COLS = new Set(['revenue_types', 'expense_categories', 'rooms', 'plan_sections']);
 const DATE_COLS = new Set(['birth_date', 'registration_date', 'medical_waiver_validity', 'course_date', 'payment_date', 'due_date', 'expense_date', 'changed_on']);
 const TIME_COLS = new Set(['start_time', 'end_time', 'default_start_time', 'default_end_time']);
 const PHONE_COLS = new Set(['phone', 'emergency_phone', 'guardian_phone', 'whatsapp_number']);
@@ -1970,6 +1977,8 @@ const ADAC_PROGRAM = {
 };
 const ADAC_CATS = { tt: 'Technico tactique', rev: 'Révisions', pp: 'Préparation physique générale' };
 S.planMonth = new Date().getMonth() + 1;
+// Chapitres de la planification : réglables dans Paramètres, sinon liste par défaut
+const planSections = () => (S.settings?.plan_sections?.length ? S.settings.plan_sections : PLAN_SECTIONS);
 
 async function viewPlan(view) {
   const season = activeSeason();
@@ -1984,7 +1993,7 @@ async function viewPlan(view) {
   const month = S.planMonth, monthName = m => MONTHS[m - 1][0].toUpperCase() + MONTHS[m - 1].slice(1);
   const ofMonth = items.filter(i => i.month === month);
   const done = ofMonth.filter(i => i.done).length;
-  const sections = [...new Set([...PLAN_SECTIONS, ...ofMonth.map(i => i.category)])];
+  const sections = [...new Set([...planSections(), ...ofMonth.map(i => i.category)])];
   const yearDone = items.filter(i => i.done).length;
 
   view.innerHTML = head('Planification annuelle', `Programme mois par mois, à cocher au fil de l’année · saison ${esc(season.label)}`) + `
@@ -2659,7 +2668,7 @@ sb.auth.onAuthStateChange((event, session) => {
   const was = S.session?.user?.id;
   S.session = session;
   if (event === 'PASSWORD_RECOVERY') { S.recovery = true; return setTimeout(boot); }
-  if (event === 'SIGNED_OUT') { S.profile = null; S.authMode = 'login'; S.bootedFor = null; return setTimeout(boot); }
+  if (event === 'SIGNED_OUT') { S.profile = null; S.authMode = 'login'; S.bootedFor = null; S.opened = false; return setTimeout(boot); }
   // À l'ouverture, Supabase peut annoncer la connexion deux fois : on ne démarre qu'une fois par compte
   if (event === 'INITIAL_SESSION' || (event === 'SIGNED_IN' && was !== session?.user?.id)) {
     const who = session?.user?.id || 'aucun';

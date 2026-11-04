@@ -427,3 +427,7 @@ alter table public.club_settings
   add column if not exists adac_url text,
   add column if not exists adac_key text,
   add column if not exists adac_discipline text default 'BDR';
+
+-- Chapitres de la planification annuelle (migration-6.sql)
+alter table public.club_settings
+  add column if not exists plan_sections text[];
