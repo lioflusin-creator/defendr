@@ -564,6 +564,7 @@ function memberForm(m, onSaved) {
     <div class="fieldset-title">Cotisation</div>
     <div class="field"><label for="mf-fee_type">Type de cotisation</label>${sel('fee_type', feeOptions().map(([l, a]) => [l, a != null ? `${l} — ${fmtMoney(a)}` : l]), v.fee_type)}</div>
     ${inp('fee_amount', 'Montant cotisation (€)', 'number')}
+    ${isAdmin() ? '<div class="full" id="mf-pays"><div class="small muted">Chargement des règlements…</div></div>' : ''}
     <div class="fieldset-title">Santé et documents</div>
     ${chk('medical_certificate', 'Certificat médical fourni')}
     ${chk('qss', 'QSS (Questionnaire de Santé Sportive) rempli : vaut certificat médical')}
@@ -592,7 +593,9 @@ function memberForm(m, onSaved) {
     foot: `<button class="btn" data-close>Annuler</button><button class="btn btn-primary" id="mf-save">Enregistrer</button>`,
     onMount: root => {
       const fee = $('#mf-fee_type', root), amt = $('#mf-fee_amount', root);
-      fee.onchange = () => { const o = feeOptions().find(([l]) => l === fee.value); if (o && o[1] != null) amt.value = o[1]; };
+      const pays = isAdmin() ? memberPaymentsBox(m, $('#mf-pays', root), () => amt.value) : null;
+      fee.onchange = () => { const o = feeOptions().find(([l]) => l === fee.value); if (o && o[1] != null) amt.value = o[1]; pays?.refresh(); };
+      amt.oninput = () => pays?.refresh();
       $('#mf-save', root).onclick = async () => {
         const data = readForm($('#member-form', root));
         if (!data.first_name || !data.last_name) return toast('Le prénom et le nom sont obligatoires.', 'error');
@@ -603,11 +606,81 @@ function memberForm(m, onSaved) {
         const { data: saved, error } = await q;
         btn.disabled = false;
         if (error) return fail(error);
-        closeModal(); toast(m ? 'Membre mis à jour' : 'Membre ajouté');
+        const queued = pays ? await pays.flush(saved.id) : 0;
+        if (queued < 0) return;
+        closeModal(); toast((m ? 'Membre mis à jour' : 'Membre ajouté') + (queued ? ` · ${queued} règlement${queued > 1 ? 's' : ''} enregistré${queued > 1 ? 's' : ''}` : ''));
         onSaved?.(saved.id);
       };
     },
   });
+}
+
+const defaultPayType = () => { const t = S.settings?.revenue_types || []; return t.includes('Cotisation annuelle') ? 'Cotisation annuelle' : (t[0] || 'Cotisation annuelle'); };
+
+// Règlements de la saison, affichés et saisis directement dans la fiche du membre.
+// Membre existant : chaque règlement est enregistré tout de suite.
+// Nouveau membre : les règlements sont gardés en attente et enregistrés avec la fiche.
+function memberPaymentsBox(m, box, feeValue) {
+  const season = activeSeason();
+  let saved = [], queued = [];
+  const rowHtml = (p, i) => `<div class="bday"><div style="flex:1"><div style="font-weight:600">${fmtMoney(p.amount)} · ${esc(p.method || '—')}</div>
+      <div class="small muted">${fmtDate(p.payment_date)}${p.notes ? ' · ' + esc(p.notes) : ''}</div></div>
+      ${i == null ? `<span class="badge ${p.status === 'payé' ? 'ok' : 'warn'}">${p.status === 'payé' ? 'Payé' : 'En attente'}</span>`
+        : `<span class="badge accent">À enregistrer</span><button type="button" class="icon-btn" data-unq="${i}" aria-label="Retirer" title="Retirer">${icon('trash')}</button>`}</div>`;
+  const totals = () => {
+    const fee = Number(feeValue() || 0);
+    const paid = [...saved.filter(p => p.status === 'payé'), ...queued].reduce((t, p) => t + Number(p.amount), 0);
+    return { fee, paid, due: Math.round((fee - paid) * 100) / 100 };
+  };
+  const draw = () => {
+    const { fee, paid, due } = totals();
+    const dateVal = $('#mp-d', box)?.value || isoDay(new Date()), methodVal = $('#mp-me', box)?.value || 'Espèces';
+    box.innerHTML = `<div class="card card-pad" style="background:var(--surface-2, transparent)">
+      <div class="row between wrap" style="gap:6px"><strong>Règlements${season ? ' · ' + esc(season.label) : ''}</strong>
+        ${fee ? (due > 0 ? `<span class="badge danger">Reste ${fmtMoney(due)}</span>` : '<span class="badge ok">À jour</span>') : ''}</div>
+      <div class="small muted mb">Payé : ${fmtMoney(paid)}${fee ? ' sur ' + fmtMoney(fee) : ''}</div>
+      ${saved.map(p => rowHtml(p)).join('')}${queued.map((p, i) => rowHtml(p, i)).join('')}
+      ${!saved.length && !queued.length ? '<div class="small muted mb">Aucun règlement pour l’instant.</div>' : ''}
+      <div class="form-grid mt" style="align-items:end">
+        <div class="field"><label for="mp-a">Montant (€)</label><input class="input" id="mp-a" type="number" step="0.01" min="0" inputmode="decimal" value="${due > 0 ? due : ''}"></div>
+        <div class="field"><label for="mp-me">Mode</label><select class="input" id="mp-me">${METHODS.map(x => `<option ${x === methodVal ? 'selected' : ''}>${esc(x)}</option>`).join('')}</select></div>
+        <div class="field"><label for="mp-d">Date</label><input class="input" id="mp-d" type="date" value="${esc(dateVal)}"></div>
+        <div class="field"><label for="mp-no">N° de chèque / note</label><input class="input" id="mp-no"></div>
+        <div class="full"><button type="button" class="btn btn-sm" id="mp-add">${icon('plus')}Ajouter ce règlement</button></div>
+      </div></div>`;
+    $('#mp-add', box).onclick = add;
+    $$('[data-unq]', box).forEach(b => b.onclick = () => { queued.splice(+b.dataset.unq, 1); draw(); });
+  };
+  const add = async () => {
+    const amount = Number($('#mp-a', box).value), payment_date = $('#mp-d', box).value;
+    if (!(amount > 0) || !payment_date) return toast('Indiquez un montant et une date.', 'error');
+    const row = { payment_type: defaultPayType(), amount, method: $('#mp-me', box).value, payment_date, status: 'payé', notes: $('#mp-no', box).value.trim() || null, season_id: season?.id || null };
+    if (!m) { queued.push(row); return draw(); }
+    const btn = $('#mp-add', box); btn.disabled = true;
+    const { data, error } = await sb.from('payments').insert({ ...row, member_id: m.id }).select().single();
+    if (error) { btn.disabled = false; return fail(error); }
+    saved.push(data); toast(`Règlement de ${fmtMoney(amount)} enregistré`); draw();
+  };
+  (async () => {
+    if (m) {
+      let q = sb.from('payments').select('*').eq('member_id', m.id).eq('archived', false);
+      if (season) q = q.eq('season_id', season.id);
+      const { data, error } = await q.order('payment_date');
+      if (error) { box.innerHTML = '<div class="small muted">Impossible de charger les règlements.</div>'; return; }
+      saved = data || [];
+    }
+    draw();
+  })();
+  return {
+    refresh: () => { if ($('#mp-add', box)) draw(); },
+    // Enregistre les règlements en attente ; renvoie leur nombre, ou -1 en cas d'erreur
+    flush: async memberId => {
+      if (!queued.length) return 0;
+      const { error } = await sb.from('payments').insert(queued.map(p => ({ ...p, member_id: memberId })));
+      if (error) { fail(error); return -1; }
+      return queued.length;
+    },
+  };
 }
 
 async function viewMember(view, id) {
@@ -647,6 +720,7 @@ async function viewMember(view, id) {
           ${m.phone ? `<a class="btn btn-sm" href="tel:${esc(m.phone.replace(/\s/g, ''))}">${icon('phone')}Appeler</a>` : ''}
           ${wa ? `<a class="btn btn-sm" href="${wa}" target="_blank" rel="noopener">${icon('chat')}WhatsApp</a>` : ''}
           ${m.email ? `<a class="btn btn-sm" href="mailto:${esc(m.email)}">${icon('mail')}E-mail</a>` : ''}
+          ${isAdmin() ? `<button class="btn btn-sm" id="add-pay-top">${icon('euro')}Enregistrer un règlement</button>` : ''}
           <button class="btn btn-sm btn-primary" id="edit">${icon('edit')}Modifier</button>
         </div>
       </div>
@@ -660,6 +734,13 @@ async function viewMember(view, id) {
         <dt>Autorisation parentale</dt><dd>${yes(m.parental_authorization)}</dd>
         <dt>Peut récupérer l’enfant</dt><dd>${esc(m.pickup_persons || '—')}</dd></dl></div>` : ''}
     <div class="grid two">
+      ${isAdmin() ? `<div class="card card-pad"><div class="row between"><h2 style="margin:0">Règlements${season ? ' · ' + esc(season.label) : ''}</h2>
+          ${due > 0 ? `<span class="badge danger">Reste ${fmtMoney(due)}</span>` : (m.fee_amount ? '<span class="badge ok">À jour</span>' : '')}</div>
+        <div class="small muted mb">Payé : ${fmtMoney(paid)}${m.fee_amount != null ? ' sur ' + fmtMoney(m.fee_amount) : ''}</div>
+        ${seasonPays.length ? seasonPays.map(p => `<div class="bday clickable" data-pay="${p.id}"><div style="flex:1"><div style="font-weight:600">${esc(p.payment_type)}</div><div class="small muted">${fmtDate(p.payment_date)}${p.method ? ' · ' + esc(p.method) : ''}${p.bank_checked ? ' · pointé' : ''}</div></div><div style="text-align:right"><div style="font-weight:700">${fmtMoney(p.amount)}</div><span class="badge ${p.status === 'payé' ? 'ok' : 'warn'}">${p.status === 'payé' ? 'Payé' : 'En attente'}</span></div></div>`).join('') : '<div class="empty">Aucun paiement enregistré.</div>'}
+        <div class="row wrap mt" style="gap:8px"><button class="btn btn-sm" id="add-pay">${icon('plus')}Enregistrer un règlement</button>
+        ${paid > 0 ? `<button class="btn btn-sm" id="attest">${icon('file')}Attestation de paiement</button>` : ''}</div>
+      </div>` : ''}
       <div class="card card-pad"><h2>Coordonnées</h2><dl class="kv">
         <dt>Téléphone</dt><dd>${esc(m.phone || '—')}</dd><dt>E-mail</dt><dd>${esc(m.email || '—')}</dd>
         <dt>Adresse</dt><dd>${esc(m.address || '—')}</dd><dt>Date de naissance</dt><dd>${fmtDate(m.birth_date)}</dd>
@@ -681,13 +762,6 @@ async function viewMember(view, id) {
         <dt>Règlement lu</dt><dd>${yes(m.rules_read)}</dd><dt>Règlement accepté</dt><dd>${yes(m.rules_accepted)}</dd>
         <dt>Info assurance</dt><dd>${yes(m.insurance_informed)}</dd>
       </dl></div>
-      ${isAdmin() ? `<div class="card card-pad"><div class="row between"><h2 style="margin:0">Paiements${season ? ' · ' + esc(season.label) : ''}</h2>
-          ${due > 0 ? `<span class="badge danger">Reste ${fmtMoney(due)}</span>` : (m.fee_amount ? '<span class="badge ok">À jour</span>' : '')}</div>
-        <div class="small muted mb">Payé : ${fmtMoney(paid)}${m.fee_amount != null ? ' sur ' + fmtMoney(m.fee_amount) : ''}</div>
-        ${seasonPays.length ? seasonPays.map(p => `<div class="bday clickable" data-pay="${p.id}"><div style="flex:1"><div style="font-weight:600">${esc(p.payment_type)}</div><div class="small muted">${fmtDate(p.payment_date)}${p.method ? ' · ' + esc(p.method) : ''}${p.bank_checked ? ' · pointé' : ''}</div></div><div style="text-align:right"><div style="font-weight:700">${fmtMoney(p.amount)}</div><span class="badge ${p.status === 'payé' ? 'ok' : 'warn'}">${p.status === 'payé' ? 'Payé' : 'En attente'}</span></div></div>`).join('') : '<div class="empty">Aucun paiement enregistré.</div>'}
-        <div class="row wrap mt" style="gap:8px"><button class="btn btn-sm" id="add-pay">${icon('plus')}Enregistrer un paiement</button>
-        ${paid > 0 ? `<button class="btn btn-sm" id="attest">${icon('file')}Attestation de paiement</button>` : ''}</div>
-      </div>` : ''}
       <div class="card card-pad"><div class="row between"><h2 style="margin:0">Assiduité</h2>${att.length ? `<span class="badge ${st.cls}">${st.rate}% · ${st.label}</span>` : ''}</div>
         <div class="small muted">${att.length ? `${present} présence(s) sur ${att.length} séance(s)` : 'Aucune séance'} depuis l’inscription${m.registration_date ? ' le ' + fmtDate(m.registration_date) : ''}.</div>
         ${att.length ? `<div class="mt">${att.slice(0, 15).map(a => `<div class="bday"><div style="flex:1"><div style="font-weight:600">${esc(a.title)}</div><div class="small muted">${fmtDate(a.course_date)}</div></div>${a.present ? '<span class="badge ok">Présent</span>' : '<span class="badge">Absent</span>'}</div>`).join('')}${att.length > 15 ? `<div class="small muted mt">+ ${att.length - 15} séance(s) plus ancienne(s)</div>` : ''}</div>` : ''}
@@ -707,7 +781,7 @@ async function viewMember(view, id) {
   $('#add-grade') && ($('#add-grade').onclick = () => gradeEntryForm(m, null));
   $$('[data-grade]', view).forEach(b => b.onclick = () => gradeEntryForm(m, grades.find(g => g.id === b.dataset.grade)));
   $('#edit').onclick = () => memberForm(m, () => route());
-  $('#add-pay') && ($('#add-pay').onclick = () => paymentForm(null, { member_id: m.id, amount: due > 0 ? due : m.fee_amount }));
+  $$('#add-pay, #add-pay-top', view).forEach(b => b.onclick = () => paymentForm(null, { member_id: m.id, amount: due > 0 ? due : m.fee_amount }));
   $('#attest') && ($('#attest').onclick = () => printAttestation(m, seasonPays.filter(p => p.status === 'payé' && !p.archived), season));
   $$('[data-pay]', view).forEach(r => r.onclick = () => paymentForm(seasonPays.find(p => p.id === r.dataset.pay)));
   $('#del').onclick = async () => {
