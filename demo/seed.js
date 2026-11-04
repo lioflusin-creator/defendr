@@ -30,6 +30,7 @@ export function buildDemoData(userId) {
     expense_categories: ['Loyer', 'Équipement', 'Assurance', 'Affiliation', 'Frais bancaires', 'Communication', 'Événement', 'Autre'],
     rooms: ['Dojo municipal', 'Gymnase des Sports', 'Extérieur'], threshold_assidu: 70, threshold_regulier: 45, threshold_risque: 25,
     club_address: 'Gymnase des Sports, 1 rue du Stade, 00000 Ville-Démo', club_legal_id: 'W000000000', president_name: 'Camille Martin', club_email: 'contact@club-demo.fr', updated_at: ts(now),
+    bank_holder: 'CLUB DÉMO SELF-DÉFENSE', bank_iban: 'FR76 0000 0000 0000 0000 0000 000', bank_bic: 'DEMOFRPP', bank_name: 'Banque fictive de démonstration', federation_label: 'la fédération', club_documents: {},
   }];
 
   const profiles = [

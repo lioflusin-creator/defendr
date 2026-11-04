@@ -16,6 +16,8 @@ if (!db || !db.members) {
   try { localStorage.setItem('defendr-demo-derniere-sauvegarde', new Date().toISOString()); } catch {} // pas de rappel de sauvegarde dans la démo
 }
 const files = new Map(); // fichiers ajoutés pendant la visite (non conservés)
+// Bases de démo créées avant l'ajout des documents du club
+if (db.club_settings?.[0]) { const s0 = db.club_settings[0]; s0.club_documents ??= {}; if (s0.federation_label === undefined) s0.federation_label = 'la fédération'; }
 
 function save() { try { localStorage.setItem(DB_KEY, JSON.stringify(db)); } catch {} }
 save();
@@ -160,7 +162,7 @@ export function createClient() {
   return {
     from: t => new Query(t),
     rpc: async (fn, args = {}) => {
-      if (fn === 'public_club_info') { const s = db.club_settings[0] || {}; return { data: { club_name: s.club_name, fee_new: s.fee_new, fee_returning: s.fee_returning, fee_jobseeker: s.fee_jobseeker, fee_student: s.fee_student, club_email: s.club_email }, error: null }; }
+      if (fn === 'public_club_info') { const s = db.club_settings[0] || {}; return { data: { club_name: s.club_name, fee_new: s.fee_new, fee_returning: s.fee_returning, fee_jobseeker: s.fee_jobseeker, fee_student: s.fee_student, club_email: s.club_email, bank_holder: s.bank_holder, bank_iban: s.bank_iban, bank_bic: s.bank_bic, bank_name: s.bank_name, club_documents: s.club_documents || {} }, error: null }; }
       if (fn === 'restore_backup') {
         const p = args.payload || {};
         if (!Array.isArray(p.members)) return { data: null, error: { message: 'Fichier de sauvegarde invalide : onglet Membres introuvable.' } };
@@ -175,6 +177,8 @@ export function createClient() {
       from: () => ({
         upload: async (path, blob) => { files.set(path, URL.createObjectURL(blob)); return { data: { path }, error: null }; },
         createSignedUrl: async path => files.has(path) ? { data: { signedUrl: files.get(path) }, error: null } : { data: null, error: { message: 'Fichier de démonstration indisponible' } },
+        getPublicUrl: path => ({ data: { publicUrl: files.get(path) || '#fichier-de-demonstration-indisponible' } }),
+        remove: async paths => { (paths || []).forEach(p => files.delete(p)); return { data: [], error: null }; },
       }),
     },
     auth: {

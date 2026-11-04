@@ -20,6 +20,12 @@
     .choice label { border: 1px solid var(--line); border-radius: 10px; padding: 8px 14px; cursor: pointer; display: flex; gap: 8px; align-items: center; }
     .choice input { accent-color: var(--accent); }
     [hidden] { display: none !important; }
+    .bank { border: 1px solid var(--accent); border-radius: 10px; padding: 12px 14px; margin-bottom: 10px; }
+    .bank dl { display: grid; grid-template-columns: auto minmax(0, 1fr); gap: 4px 12px; margin: 0 0 8px; font-size: 14px; }
+    .bank dt { color: var(--muted); }
+    .bank dd { margin: 0; overflow-wrap: anywhere; }
+    .bank .mono { font-family: ui-monospace, Menlo, Consolas, monospace; font-weight: 600; }
+    .doc-link { display: inline-flex; gap: 6px; align-items: center; font-weight: 600; }
     .done-box { text-align: center; padding: 48px 20px; }
   </style>
 </head>
@@ -64,7 +70,29 @@
           <div class="field"><label class="req" for="ep">Téléphone</label><input class="input" id="ep" name="emergency_phone" type="tel" required></div>
           <div class="field full"><label for="mn">Information médicale utile à l’encadrant (facultatif)</label><input class="input" id="mn" name="medical_notes" placeholder="ex : asthme, blessure récente…"><span class="help">N’indiquez que ce qui est utile pour votre sécurité pendant les cours.</span></div>
         </div>
-        <p class="small muted">Le certificat médical ou le questionnaire de santé est à remettre en main propre à l’encadrant.</p>
+      </section>
+
+      <section class="card card-pad">
+        <h2>Certificat médical ou questionnaire de santé</h2>
+        <div class="field"><label class="req">Votre justificatif de santé</label>
+          <div class="choice"><label><input type="radio" name="health_mode" value="certificat">J’envoie mon certificat médical</label><label><input type="radio" name="health_mode" value="questionnaire">J’ai rempli le questionnaire de santé</label></div></div>
+        <div id="h-cert" hidden>
+          <div class="field"><label class="req" for="hc">Certificat médical (photo ou PDF)</label><input class="input" id="hc" type="file" accept="application/pdf,image/*"><span class="help">Certificat de moins d’un an attestant l’absence de contre-indication à la pratique de la self-défense. 10 Mo maximum.</span></div>
+        </div>
+        <div id="h-q" hidden>
+          <p class="small" id="hq-links"></p>
+          <label class="check"><input type="checkbox" name="health_attested" id="ha"><span id="ha-txt"></span></label>
+          <div class="field mt"><label for="hq">Questionnaire rempli (facultatif, photo ou PDF)</label><input class="input" id="hq" type="file" accept="application/pdf,image/*"></div>
+          <div class="alert info small">Une seule réponse « OUI », ou une question dont vous n’êtes pas sûr(e) : un certificat médical est obligatoire. Choisissez alors « J’envoie mon certificat médical ».</div>
+        </div>
+      </section>
+
+      <section class="card card-pad">
+        <h2>Paiement de la cotisation</h2>
+        <div class="field"><label>Comment allez-vous régler ?</label>
+          <div class="choice"><label><input type="radio" name="payment_method" value="Virement">Virement</label><label><input type="radio" name="payment_method" value="Chèque">Chèque(s)</label><label><input type="radio" name="payment_method" value="Espèces">Espèces</label></div></div>
+        <div id="bank" hidden></div>
+        <p class="small muted" id="pay-help">Les chèques et les espèces sont à remettre à l’encadrant au prochain cours.</p>
       </section>
 
       <section class="card card-pad">
@@ -76,6 +104,7 @@
 
       <section class="card card-pad">
         <h2>Consentements</h2>
+        <p class="small" id="rules-link" hidden></p>
         <div class="field"><label>Droit à l’image (photos et vidéos du club)</label>
           <div class="choice"><label><input type="radio" name="consent_image" value="oui" required>J’accepte</label><label><input type="radio" name="consent_image" value="non">Je refuse</label></div></div>
         <label class="check"><input type="checkbox" name="consent_data" required><span>J’accepte que mes données soient utilisées par le club pour la gestion de mon adhésion. <span class="req"></span></span></label>
@@ -104,9 +133,47 @@
     $('#ft').innerHTML = '<option value="">—</option>' + [['Nouvel adhérent(e)', club.fee_new], ['Ancien(ne) adhérent(e)', club.fee_returning], ['Demandeur(se) d’emploi', club.fee_jobseeker], ['Étudiant(e)', club.fee_student]]
       .map(([l, a]) => `<option value="${esc(l)}">${esc(l)}${money(a)}</option>`).join('');
 
+    const docUrl = f => f?.path ? sb.storage.from('documents').getPublicUrl(f.path).data.publicUrl : null;
+    const docs = club.club_documents || {};
+    const link = (f, label) => f ? `<a class="doc-link" href="${esc(docUrl(f))}" target="_blank" rel="noopener">📄 ${esc(label)}</a>` : '';
+    if (docs.reglement) { $('#rules-link').innerHTML = link(docs.reglement, 'Lire le règlement intérieur du club'); $('#rules-link').hidden = false; }
+
+    // Santé : certificat médical ou questionnaire
+    const healthMode = () => document.querySelector('[name=health_mode]:checked')?.value || '';
+    const refreshHealth = () => {
+      const m = healthMode(), minor = isMinor(), known = !!$('#bd').value;
+      $('#h-cert').hidden = m !== 'certificat'; $('#h-q').hidden = m !== 'questionnaire';
+      const links = [(!known || !minor) && link(docs.qss, 'Questionnaire QS-SPORT (adultes)'), (!known || minor) && link(docs.qss_mineur, 'Questionnaire de santé du sportif mineur')].filter(Boolean);
+      $('#hq-links').innerHTML = links.length ? 'Téléchargez et remplissez le questionnaire pour vous-même : ' + links.join(' · ') : '';
+      $('#ha-txt').innerHTML = minor ? 'En tant que responsable légal, j’atteste que toutes les réponses au questionnaire de santé du sportif mineur sont « NON ». <span class="req"></span>'
+        : 'J’atteste avoir renseigné le questionnaire de santé QS-SPORT (Cerfa n°15699*01) et avoir répondu « NON » à toutes les questions. <span class="req"></span>';
+    };
+    document.querySelectorAll('[name=health_mode]').forEach(r => r.addEventListener('change', refreshHealth));
+
+    // Paiement : coordonnées bancaires pour le virement
+    const payMethod = () => document.querySelector('[name=payment_method]:checked')?.value || '';
+    const refreshPay = () => {
+      const v = payMethod() === 'Virement', box = $('#bank');
+      box.hidden = !v; $('#pay-help').hidden = v;
+      if (!v) return;
+      const who = [$('#ln').value.trim().toUpperCase(), $('#fn').value.trim()].filter(Boolean).join(' ') || 'NOM Prénom';
+      box.innerHTML = club.bank_iban ? `<div class="bank"><dl>
+          ${club.bank_holder ? `<dt>Titulaire</dt><dd>${esc(club.bank_holder)}</dd>` : ''}
+          <dt>IBAN</dt><dd class="mono">${esc(club.bank_iban)}</dd>
+          ${club.bank_bic ? `<dt>BIC</dt><dd class="mono">${esc(club.bank_bic)}</dd>` : ''}
+          ${club.bank_name ? `<dt>Banque</dt><dd>${esc(club.bank_name)}</dd>` : ''}
+          <dt>Libellé</dt><dd><strong>COTISATION ${esc(who)}</strong></dd></dl>
+          <div class="row wrap" style="gap:8px"><button type="button" class="btn btn-sm" id="iban-copy">Copier l’IBAN</button>${link(docs.rib, 'Télécharger le RIB')}</div></div>`
+        : `<div class="alert info small">${docs.rib ? link(docs.rib, 'Télécharger le RIB du club') : 'Le club vous communiquera ses coordonnées bancaires.'}</div>`;
+      $('#iban-copy') && ($('#iban-copy').onclick = async e => { try { await navigator.clipboard.writeText(club.bank_iban.replace(/\s/g, '')); e.target.textContent = 'IBAN copié ✓'; } catch { e.target.textContent = 'Copie impossible : recopiez l’IBAN'; } });
+    };
+    document.querySelectorAll('[name=payment_method]').forEach(r => r.addEventListener('change', refreshPay));
+    ['#fn', '#ln'].forEach(id => $(id).addEventListener('change', refreshPay));
+
     const age = d => { if (!d) return null; const b = new Date(d + 'T00:00:00'), n = new Date(); let a = n.getFullYear() - b.getFullYear(); if (n < new Date(n.getFullYear(), b.getMonth(), b.getDate())) a--; return a; };
     const isMinor = () => (age($('#bd').value) ?? 99) < 18;
-    $('#bd').addEventListener('change', () => { $('#minor-block').hidden = !isMinor(); });
+    $('#bd').addEventListener('change', () => { $('#minor-block').hidden = !isMinor(); refreshHealth(); });
+    refreshHealth();
     $('#os').addEventListener('change', e => { $('#od-f').hidden = !e.target.checked; });
 
     $('#f').addEventListener('submit', async e => {
@@ -126,16 +193,37 @@
       if (!d.consent_image) missing.push('droit à l’image');
       if (!d.consent_data || !d.rules_accepted || !d.insurance_informed) missing.push('les cases de consentement obligatoires');
       if (isMinor() && (!d.guardian_name || !d.guardian_phone)) missing.push('responsable légal');
+      const cert = $('#hc').files[0], quest = $('#hq').files[0];
+      if (!d.health_mode) missing.push('justificatif de santé');
+      else if (d.health_mode === 'certificat' && !cert) missing.push('le certificat médical (photo ou PDF)');
+      else if (d.health_mode === 'questionnaire' && !d.health_attested) missing.push('l’attestation du questionnaire de santé');
+      const files = d.health_mode === 'certificat' ? [[cert, 'certificat']] : quest ? [[quest, 'questionnaire']] : [];
+      if (files.some(([f]) => f.size > 10 * 1024 * 1024)) missing.push('un fichier de 10 Mo maximum (prenez une photo moins lourde)');
       if (missing.length) { msg.innerHTML = `<div class="alert error">Merci de compléter : ${esc(missing.join(', '))}.</div>`; msg.scrollIntoView({ block: 'center' }); return; }
       d.consent_image = d.consent_image === 'oui';
       d.rules_read = d.rules_accepted;
       if (!isMinor()) { delete d.guardian_name; delete d.guardian_phone; delete d.guardian_email; delete d.pickup_persons; delete d.parental_authorization; }
+      if (d.health_mode !== 'questionnaire') d.health_attested = false;
       const btn = $('#send'); btn.disabled = true; btn.textContent = 'Envoi…';
+      try {
+        const folder = (crypto.randomUUID && crypto.randomUUID()) || Date.now() + '-' + Math.random().toString(36).slice(2);
+        d.health_files = [];
+        for (const [file, kind] of files) {
+          const ext = (file.name.split('.').pop() || '').toLowerCase().replace(/[^a-z0-9]/g, '') || 'pdf';
+          const path = `${folder}/${kind}.${ext}`;
+          const up = await sb.storage.from('inscriptions').upload(path, file, { contentType: file.type || undefined });
+          if (up.error) throw up.error;
+          d.health_files.push({ kind, path, name: file.name });
+        }
+      } catch {
+        btn.disabled = false; btn.textContent = 'Envoyer ma fiche d’inscription';
+        msg.innerHTML = `<div class="alert error">Le fichier n’a pas pu être envoyé. Utilisez une photo (JPG, PNG) ou un PDF de moins de 10 Mo, puis réessayez.</div>`; return;
+      }
       const { error } = await sb.from('registrations').insert({ data: d });
       if (error) { btn.disabled = false; btn.textContent = 'Envoyer ma fiche d’inscription'; msg.innerHTML = `<div class="alert error">L’envoi n’a pas fonctionné. Vérifiez votre connexion et réessayez.</div>`; return; }
       $('#reg').innerHTML = `<div class="card done-box"><div class="logo-mark" style="margin:0 auto 16px">✓</div><h1 style="font-family:var(--display);text-transform:uppercase">Merci ${esc(d.first_name)} !</h1>
         <p>Votre fiche d’inscription a bien été envoyée${club.club_name ? ' au ' + esc(club.club_name) : ''}.</p>
-        <p class="muted">Pensez à apporter votre certificat médical (ou questionnaire de santé) et votre règlement au prochain cours. À très vite sur le tatami ! 👊</p></div>`;
+        <p class="muted">${d.payment_method === 'Virement' ? `Pensez à faire le virement de la cotisation avec le libellé « COTISATION ${esc(d.last_name.toUpperCase())} ${esc(d.first_name)} ».` : 'Pensez à apporter le règlement de votre cotisation au prochain cours.'} À très vite sur le tatami ! 👊</p></div>`;
       window.scrollTo(0, 0);
     });
   </script>

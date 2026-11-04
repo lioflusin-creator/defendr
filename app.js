@@ -766,7 +766,7 @@ async function viewMember(view, id) {
       <div class="card card-pad"><h2>Santé et documents</h2><dl class="kv">
         <dt>Justificatif de santé</dt><dd>${healthBadge(m)}</dd><dt>Certificat médical</dt><dd>${yes(m.medical_certificate)}</dd><dt>QSS</dt><dd>${yes(m.qss)}</dd>
         <dt>Décharge médicale</dt><dd>${yes(m.medical_waiver)}${m.medical_waiver_validity ? ' · jusqu’au ' + fmtDate(m.medical_waiver_validity) : ''}</dd><dt>Notes médicales</dt><dd>${esc(m.medical_notes || '—')}</dd>
-      </dl></div>
+      </dl>${m.health_files?.length ? `<div class="small muted mt">Reçu avec l’inscription en ligne :</div><div class="row wrap" id="m-hf" style="gap:6px;margin-top:6px">${healthFileButtons(m.health_files)}</div>` : ''}</div>
       <div class="card card-pad"><h2>Consentements</h2><dl class="kv">
         <dt>Droit à l’image</dt><dd>${yes(m.consent_image)}</dd><dt>Utilisation des données</dt><dd>${yes(m.consent_data)}</dd>
         <dt>Règlement lu</dt><dd>${yes(m.rules_read)}</dd><dt>Règlement accepté</dt><dd>${yes(m.rules_accepted)}</dd>
@@ -787,6 +787,7 @@ async function viewMember(view, id) {
         : `<div class="small muted mt">Aucun grade enregistré. ${isAdmin() ? 'Utilisez « Ajouter un grade passé » pour noter quand il a obtenu ses niveaux avant l’arrivée de la nouvelle appli.' : ''}</div>`}
     </div>`; })()}
     <div class="mt"><button class="btn btn-danger btn-sm" id="del">${icon('trash')}Supprimer ce membre</button></div>`;
+  $('#m-hf') && bindHealthFiles($('#m-hf'), m.health_files);
   $('#promote') && ($('#promote').onclick = () => promoteForm(m, () => route()));
   $('#add-grade') && ($('#add-grade').onclick = () => gradeEntryForm(m, null));
   $$('[data-grade]', view).forEach(b => b.onclick = () => gradeEntryForm(m, grades.find(g => g.id === b.dataset.grade)));
@@ -998,11 +999,35 @@ async function viewSettings(view) {
           <p class="small muted mt">Si vous recopiez un jour le script, pensez à refaire « Déployer → Gérer les déploiements → Modifier → Nouvelle version ».</p>
         </details>
       </div>
+      <div class="card card-pad" id="docs-card">
+        <h2>Documents et paiement de l’inscription</h2>
+        ${'club_documents' in s ? '' : '<div class="alert error">Pour activer cette partie, exécutez une fois le fichier <strong>migration-7.sql</strong> dans Supabase → Éditeur SQL.</div>'}
+        <p class="small muted">Ces fichiers sont proposés au téléchargement sur la page d’inscription en ligne et ajoutés en annexe du dossier PDF à signer. Formats : PDF, JPG ou PNG.</p>
+        ${CLUB_DOCS.map(d => { const f = (s.club_documents || {})[d.key]; return `<div class="bday"><div style="flex:1;min-width:0"><div style="font-weight:600">${esc(d.label)}</div><div class="small muted" style="overflow-wrap:anywhere">${f ? esc(f.name) : 'Aucun fichier'}</div></div>
+          ${f ? `<a class="btn btn-sm" href="${esc(docUrl(f))}" target="_blank" rel="noopener">Voir</a>` : ''}
+          <label class="btn btn-sm${f ? '' : ' btn-primary'}" style="cursor:pointer">${icon('up')}${f ? 'Remplacer' : 'Ajouter'}<input type="file" data-doc="${d.key}" accept="${d.image ? 'image/png,image/jpeg' : 'application/pdf,image/png,image/jpeg'}" hidden></label>
+          ${f ? `<button class="icon-btn" data-doc-rm="${d.key}" aria-label="Retirer ${esc(d.label)}">${icon('trash')}</button>` : ''}</div>`; }).join('')}
+        <form id="bank-form" class="mt">
+          <div class="section-title">Virement : coordonnées du compte du club</div>
+          <div class="field"><label for="st-bh">Titulaire du compte</label><input class="input" id="st-bh" name="bank_holder" value="${esc(s.bank_holder || '')}" placeholder="ex : ASSOC. CŒUR D’HÉRAULT AUTO DÉFENSE"></div>
+          <div class="field"><label for="st-iban">IBAN</label><input class="input" id="st-iban" name="bank_iban" value="${esc(s.bank_iban || '')}" placeholder="FR76 …" autocomplete="off"></div>
+          <div class="form-grid">
+            <div class="field"><label for="st-bic">BIC</label><input class="input" id="st-bic" name="bank_bic" value="${esc(s.bank_bic || '')}" autocomplete="off"></div>
+            <div class="field"><label for="st-bn">Banque</label><input class="input" id="st-bn" name="bank_name" value="${esc(s.bank_name || '')}" placeholder="ex : Crédit Agricole Languedoc"></div>
+          </div>
+          <div class="field"><label for="st-fed">Fédération citée dans le droit à l’image et les données</label><input class="input" id="st-fed" name="federation_label" value="${esc(s.federation_label ?? 'l’ADAC')}" placeholder="ex : l’ADAC"><span class="help">Avec l’article (« l’ADAC », « la FFKDA »). Laissez vide si aucune.</span></div>
+          <button class="btn btn-primary" type="submit">Enregistrer</button>
+        </form>
+      </div>
+
       <div class="card card-pad">
         <h2>Inscription en ligne</h2>
-        <p class="small muted">Envoyez ce lien aux personnes qui veulent s’inscrire : elles remplissent leur fiche elles-mêmes, et la demande arrive dans la page Membres, à valider.</p>
+        <p class="small muted">Envoyez ce lien aux personnes qui veulent s’inscrire : elles remplissent leur fiche elles-mêmes, envoient leur certificat médical ou leur questionnaire de santé, et la demande arrive dans la page Membres, à valider.</p>
         <div class="row" style="gap:8px"><input class="input" id="reg-url" readonly value="${esc(registrationUrl())}" aria-label="Lien d’inscription"><button class="btn" id="reg-copy">${icon('copy')}</button></div>
         <div class="row wrap mt" style="gap:8px"><a class="btn btn-sm" href="${esc(waUrl(null, `Pour t’inscrire au ${S.settings?.club_name || 'club'}, remplis ta fiche ici : ${registrationUrl()}`))}" target="_blank" rel="noopener">${icon('chat')}Partager sur WhatsApp</a><a class="btn btn-sm" href="${esc(registrationUrl())}" target="_blank" rel="noopener">Voir la page</a></div>
+        <div class="section-title mt">Dossier PDF à signer</div>
+        <p class="small muted">Pour les personnes qui préfèrent remplir et signer un PDF : fiche complète (cotisation, virement, droit à l’image, règlement, autorisation parentale, santé), suivie des documents du club en annexe.</p>
+        <button class="btn btn-primary" id="pdf-send">${icon('chat')}Envoyer le dossier PDF par WhatsApp</button>
       </div>
     </div>`;
   $('#backup').onclick = () => downloadBackup($('#backup'));
@@ -1022,6 +1047,42 @@ async function viewSettings(view) {
     if (await save(d)) $$('.brand-club').forEach(x => x.textContent = d.club_name);
   };
   $('#thr-form').onsubmit = async e => { e.preventDefault(); await save(readForm(e.target)); };
+
+  // Documents du club (règlement, QSS, QSS mineur, RIB, logo)
+  $$('[data-doc]', view).forEach(inp => inp.onchange = async () => {
+    const file = inp.files[0]; inp.value = ''; if (!file) return;
+    const d = CLUB_DOCS.find(x => x.key === inp.dataset.doc);
+    const okType = d.image ? /^image\/(png|jpeg)$/.test(file.type) : /^(application\/pdf|image\/(png|jpeg))$/.test(file.type);
+    if (!okType) return toast(d.image ? 'Choisissez une image JPG ou PNG.' : 'Choisissez un PDF, un JPG ou un PNG.', 'error');
+    if (file.size > 15 * 1024 * 1024) return toast('Fichier trop lourd : 15 Mo maximum.', 'error');
+    const ext = { 'application/pdf': 'pdf', 'image/png': 'png', 'image/jpeg': 'jpg' }[file.type];
+    const path = `${d.key}-${Date.now()}.${ext}`;
+    toast('Envoi du fichier…');
+    const { error } = await sb.storage.from('documents').upload(path, file, { contentType: file.type });
+    if (error) return fail(error);
+    const docs = { ...(S.settings.club_documents || {}) }, old = docs[d.key];
+    docs[d.key] = { path, name: file.name, type: file.type, updated_at: new Date().toISOString() };
+    if (await save({ club_documents: docs }, `${d.label} enregistré`)) {
+      if (old?.path) sb.storage.from('documents').remove([old.path]).catch(() => {});
+      route();
+    } else sb.storage.from('documents').remove([path]).catch(() => {});
+  });
+  $$('[data-doc-rm]', view).forEach(b => b.onclick = async () => {
+    const d = CLUB_DOCS.find(x => x.key === b.dataset.docRm);
+    if (!await confirmBox('Retirer le document', `Retirer « ${esc(d.label)} » ? Il ne sera plus proposé sur la page d’inscription ni ajouté au dossier PDF.`, 'Retirer')) return;
+    const docs = { ...(S.settings.club_documents || {}) }, old = docs[d.key]; delete docs[d.key];
+    if (await save({ club_documents: docs }, 'Document retiré')) { if (old?.path) sb.storage.from('documents').remove([old.path]).catch(() => {}); route(); }
+  });
+  $('#bank-form').onsubmit = async e => {
+    e.preventDefault();
+    const d = readForm(e.target);
+    if (d.bank_iban) d.bank_iban = d.bank_iban.replace(/\s+/g, '').toUpperCase().replace(/(.{4})/g, '$1 ').trim();
+    if (d.bank_bic) d.bank_bic = d.bank_bic.replace(/\s+/g, '').toUpperCase();
+    if (d.bank_iban && !/^[A-Z]{2}\d{2}[A-Z0-9 ]{10,40}$/.test(d.bank_iban)) return toast('L’IBAN ne semble pas valide : vérifiez-le.', 'error');
+    d.federation_label = e.target.federation_label.value.trim(); // vide = aucune fédération
+    if (await save(d, 'Coordonnées enregistrées')) { $('#st-iban').value = d.bank_iban || ''; $('#st-bic').value = d.bank_bic || ''; }
+  };
+  $('#pdf-send').onclick = openPdfDossier;
   const tags = $('#tags-card');
   tags.onclick = async e => {
     const rm = e.target.closest('[data-rm]'), add = e.target.closest('[data-add]');
@@ -1510,6 +1571,224 @@ async function courseForm(c, defaults = {}) {
    ===================================================================== */
 const registrationUrl = () => location.origin + location.pathname.replace(/[^/]*$/, '') + 'inscription.html';
 
+// Documents du club, réglables dans Paramètres (stockés dans l'espace public « documents »)
+const CLUB_DOCS = [
+  { key: 'reglement', label: 'Règlement intérieur' },
+  { key: 'qss', label: 'Questionnaire de santé QS-Sport (adultes)' },
+  { key: 'qss_mineur', label: 'Questionnaire de santé (mineurs)' },
+  { key: 'rib', label: 'RIB du club' },
+  { key: 'logo', label: 'Logo du club (en-tête du dossier PDF)', image: true },
+];
+const docUrl = f => f?.path ? sb.storage.from('documents').getPublicUrl(f.path).data.publicUrl : null;
+
+// Justificatifs de santé envoyés avec l'inscription (espace privé « inscriptions »)
+const HEALTH_KIND = { certificat: 'Certificat médical', questionnaire: 'Questionnaire de santé' };
+const healthFileButtons = files => (files || []).map((f, i) => `<button type="button" class="btn btn-sm" data-hf="${i}">${icon('file')}${esc(HEALTH_KIND[f.kind] || 'Justificatif')}</button>`).join('');
+function bindHealthFiles(root, files) {
+  $$('[data-hf]', root).forEach(b => b.onclick = async () => {
+    const f = files[+b.dataset.hf];
+    const w = window.open('', '_blank'); // ouvert tout de suite, sinon le téléphone bloque la fenêtre
+    const { data, error } = await sb.storage.from('inscriptions').createSignedUrl(f.path, 600);
+    if (error) { w?.close(); return fail(error); }
+    if (w) w.location = data.signedUrl; else location.href = data.signedUrl;
+  });
+}
+
+/* ---------- Dossier d'inscription PDF à signer, envoyé par WhatsApp ---------- */
+function openPdfDossier() {
+  let pdfFile = null;
+  openModal({
+    title: 'Dossier PDF à signer', size: 'sm',
+    body: `<form id="pd-f"><p class="small muted" style="margin-top:0">Le nom et le téléphone sont pré-remplis dans le PDF ; la personne complète et signe le reste.</p>
+      <div class="field"><label for="pd-fn">Prénom</label><input class="input" id="pd-fn" name="prenom" autocomplete="off"></div>
+      <div class="field"><label for="pd-ln">Nom</label><input class="input" id="pd-ln" name="nom" autocomplete="off"></div>
+      <div class="field"><label for="pd-ph">Téléphone WhatsApp</label><input class="input" id="pd-ph" name="tel" type="tel" autocomplete="off" placeholder="06 12 34 56 78"></div>
+      <div id="pd-msg"></div></form>`,
+    foot: `<button class="btn" data-close>Fermer</button><button class="btn btn-primary" id="pd-make">${icon('file')}Préparer le PDF</button><button class="btn btn-primary" id="pd-share" hidden>${icon('chat')}Envoyer sur WhatsApp</button>`,
+    onMount: root => {
+      const form = $('#pd-f', root), msg = $('#pd-msg', root), make = $('#pd-make', root), share = $('#pd-share', root);
+      const text = () => { const p = form.prenom.value.trim(); return `Bonjour${p ? ' ' + p : ''},\n\nvoici ton dossier d’inscription au ${S.settings?.club_name || 'club'}${activeSeason() ? ' pour la saison ' + activeSeason().label : ''}.\n\n1. Remplis et signe le PDF (sur ton téléphone ou imprimé).\n2. Joins ton certificat médical ou signe l’attestation de santé (page 3).\n3. Règle la cotisation : virement (coordonnées page 2), chèque ou espèces.\n\nRenvoie-nous le tout ici ou apporte-le au prochain cours. À très vite sur le tatami ! 👊`; };
+      form.oninput = () => { pdfFile = null; share.hidden = true; make.hidden = false; msg.innerHTML = ''; };
+      make.onclick = async () => {
+        make.disabled = true; make.textContent = 'Préparation…';
+        try {
+          const d = readForm(form);
+          const { bytes, problems } = await buildDossierPdf({ prenom: d.prenom || '', nom: d.nom || '', tel: d.tel || '' });
+          const slug = v => String(v || '').normalize('NFD').replace(/[̀-ͯ]/g, '').replace(/[^A-Za-z0-9]+/g, '_').replace(/^_|_$/g, '');
+          const name = ['Dossier_inscription', slug(S.settings?.club_name), slug(d.nom), slug(d.prenom)].filter(Boolean).join('_') + '.pdf';
+          pdfFile = new File([bytes], name, { type: 'application/pdf' });
+          make.hidden = true; share.hidden = false;
+          msg.innerHTML = `<div class="alert ${problems.length ? 'error' : 'info'}" style="margin:0">${problems.length ? `PDF prêt, mais ces documents n’ont pas pu être ajoutés : ${esc(problems.join(', '))}. Vérifiez-les dans Documents et paiement de l’inscription.` : 'PDF prêt.'} ${navigator.canShare?.({ files: [pdfFile] }) ? 'Touchez « Envoyer sur WhatsApp » puis choisissez WhatsApp et la personne.' : 'Le PDF va être téléchargé et WhatsApp s’ouvrira avec le message : joignez-y le PDF (trombone → Document).'}</div>`;
+        } catch (e) { fail(e); }
+        finally { make.disabled = false; make.innerHTML = `${icon('file')}Préparer le PDF`; }
+      };
+      share.onclick = async () => {
+        if (!pdfFile) return;
+        if (navigator.canShare?.({ files: [pdfFile] })) {
+          try { await navigator.share({ files: [pdfFile], text: text() }); return; }
+          catch (e) { if (e?.name === 'AbortError') return; }
+        }
+        const a = document.createElement('a'); a.href = URL.createObjectURL(pdfFile); a.download = pdfFile.name; document.body.appendChild(a); a.click(); a.remove();
+        setTimeout(() => URL.revokeObjectURL(a.href), 60000);
+        const link = waUrl(form.tel.value.trim() || null, text());
+        if (link) window.open(link, '_blank', 'noopener');
+      };
+    },
+  });
+}
+
+async function buildDossierPdf(ad) {
+  const { PDFDocument, StandardFonts, rgb } = await import('https://cdn.jsdelivr.net/npm/pdf-lib@1.17.1/+esm');
+  const s = S.settings || {}, season = activeSeason(), docs = s.club_documents || {};
+  const club = s.club_name || 'le club', fede = (s.federation_label ?? 'l’ADAC').trim();
+  const hx = h => { const n = parseInt(h.slice(1), 16); return rgb((n >> 16 & 255) / 255, (n >> 8 & 255) / 255, (n & 255) / 255); };
+  const RED = hx('#D0161B'), DARK = hx('#111111'), GREY = hx('#5A5A5A'), LIGHT = hx('#F4F4F4'), FIELD = hx('#FBF6F6'), LINE = hx('#BDBDBD'),
+    GREEN = hx('#2E7D32'), BLUE = hx('#1F4E9E'), PURPLE = hx('#6A2A9A'), WHITE = rgb(1, 1, 1), BLACK = rgb(0, 0, 0), PINK = hx('#FFF5F5'), SOFT = hx('#BBBBBB');
+  const doc = await PDFDocument.create();
+  doc.setTitle(`Dossier d'inscription – ${club}`); doc.setAuthor(club);
+  const F = await doc.embedFont(StandardFonts.Helvetica), FB = await doc.embedFont(StandardFonts.HelveticaBold),
+    FI = await doc.embedFont(StandardFonts.HelveticaOblique), FC = await doc.embedFont(StandardFonts.CourierBold);
+  const form = doc.getForm();
+  const W = 595.28, H = 841.89, M = 30, half = (W - 2 * M - 12) / 2;
+  let page, y;
+  const clean = v => { let o = ''; for (const ch of String(v ?? '')) { try { F.encodeText(ch); o += ch; } catch { o += ({ ' ': ' ', ' ': ' ', '‑': '-', '→': '>' })[ch] ?? ''; } } return o; };
+  const text = (t, x, yy, size = 9, font = F, color = DARK) => page.drawText(clean(t), { x, y: yy, size, font, color });
+  const wrap = (t, font, size, w) => { const out = []; for (const p of clean(t).split('\n')) { let line = ''; for (const word of p.split(' ')) { const c = line ? line + ' ' + word : word; if (font.widthOfTextAtSize(c, size) > w && line) { out.push(line); line = word; } else line = c; } out.push(line); } return out; };
+  const para = (t, x, yy, w, size = 8.5, font = F, color = DARK) => { for (const l of wrap(t, font, size, w)) { page.drawText(l, { x, y: yy, size, font, color }); yy -= size * 1.3; } return yy; };
+  const rrect = (x, yy, w, h, r, o) => page.drawSvgPath(`M ${r} 0 H ${w - r} Q ${w} 0 ${w} ${r} V ${h - r} Q ${w} ${h} ${w - r} ${h} H ${r} Q 0 ${h} 0 ${h - r} V ${r} Q 0 0 ${r} 0 Z`,
+    { x, y: yy + h, color: o.fill, borderColor: o.stroke, borderWidth: o.stroke ? (o.bw || 0.8) : 0, borderDashArray: o.dash });
+  const names = new Set(); const uniq = n => { let k = n, i = 2; while (names.has(k)) k = n + '_' + i++; names.add(k); return k; };
+  const tf = (name, x, yy, w, h = 15, o = {}) => { const f = form.createTextField(uniq(name)); if (o.multiline) f.enableMultiline(); if (o.value) f.setText(clean(o.value));
+    f.addToPage(page, { x, y: yy, width: w, height: h, borderColor: LINE, backgroundColor: FIELD, borderWidth: 0.6, textColor: BLACK, font: F }); f.setFontSize(9); };
+  const cb = (name, x, yy, size = 10) => form.createCheckBox(uniq(name)).addToPage(page, { x, y: yy, width: size, height: size, borderColor: GREY, borderWidth: 0.8, backgroundColor: WHITE, textColor: RED });
+  const labeled = (label, name, x, yy, w, value) => { const lw = FB.widthOfTextAtSize(clean(label), 8.5) + 5; text(label, x, yy + 4, 8.5, FB); tf(name, x + lw, yy, w - lw, 15, { value }); };
+  const section = (num, title, color = RED) => { rrect(M, y - 20, W - 2 * M, 20, 4, { fill: color }); page.drawCircle({ x: M + 14, y: y - 10, size: 7, color: WHITE });
+    const n = String(num); page.drawText(n, { x: M + 14 - FB.widthOfTextAtSize(n, 9) / 2, y: y - 13.2, size: 9, font: FB, color }); text(title, M + 28, y - 14, 10.5, FB, WHITE); y -= 32; };
+  const signRow = (prefix, label = 'Signature') => { rrect(M, y - 34, W - 2 * M, 40, 4, { fill: LIGHT }); text('Date :', M + 10, y - 14, 8.5, FB); tf(prefix + '_date', M + 42, y - 18, 80);
+    const lw = FB.widthOfTextAtSize(clean(label + ' :'), 8.5); text(label + ' :', M + 140, y - 14, 8.5, FB); tf(prefix + '_signature', M + 140 + lw + 6, y - 28, W - 2 * M - 160 - lw, 30); y -= 46; };
+  const fetchDoc = async f => { const r = await fetch(docUrl(f)); if (!r.ok) throw new Error('introuvable'); return new Uint8Array(await r.arrayBuffer()); };
+
+  let logo = null;
+  if (docs.logo) { try { const b = await fetchDoc(docs.logo); logo = /png/i.test(docs.logo.type || docs.logo.path) ? await doc.embedPng(b) : await doc.embedJpg(b); } catch { logo = null; } }
+  const header = () => { page.drawRectangle({ x: 0, y: H - 118, width: W, height: 118, color: DARK }); page.drawRectangle({ x: 0, y: H - 122, width: W, height: 4, color: RED });
+    let tx = M;
+    if (logo) { const k = Math.min(88 / logo.width, 101 / logo.height), w = logo.width * k, h = logo.height * k; page.drawImage(logo, { x: M - 4 + (88 - w) / 2, y: H - 112 + (101 - h) / 2, width: w, height: h }); tx = M + 100; }
+    text("FICHE D'INSCRIPTION", tx, H - 52, 25, FB, WHITE); if (season) text('SAISON ' + season.label.replace('/', ' / '), tx, H - 72, 13, FB, RED);
+    text(club, tx, H - 90, 10, F, WHITE); text('Remplissez et signez ce dossier, puis renvoyez-le avec les pièces demandées (page 3).', tx, H - 105, 8.5, FI, SOFT); };
+  const footer = n => { page.drawRectangle({ x: 0, y: 0, width: W, height: 30, color: DARK }); page.drawRectangle({ x: 0, y: 30, width: W, height: 2, color: RED });
+    const line = [s.club_address, s.whatsapp_number, s.club_email].filter(Boolean).join('  ·  '); let fs = 7.5; while (F.widthOfTextAtSize(clean(line), fs) > W - 2 * M - 30 && fs > 5) fs -= 0.25;
+    text(line, M, 12, fs, F, WHITE); text(n + '/3', W - M - F.widthOfTextAtSize(n + '/3', 7.5), 12, 7.5, F, WHITE); };
+
+  /* Page 1 */
+  page = doc.addPage([W, H]); header(); y = H - 136;
+  section(1, 'INFORMATIONS PERSONNELLES');
+  labeled('Nom :', 'nom', M, y - 4, half, ad.nom); labeled('Prénom :', 'prenom', M + half + 12, y - 4, half, ad.prenom); y -= 22;
+  labeled('Date de naissance :', 'date_naissance', M, y - 4, half);
+  text('Sexe :', M + half + 12, y, 8.5, FB); cb('sexe_f', M + half + 50, y - 2); text('F', M + half + 64, y, 8.5); cb('sexe_m', M + half + 82, y - 2); text('M', M + half + 96, y, 8.5); y -= 22;
+  labeled('Adresse :', 'adresse', M, y - 4, W - 2 * M); y -= 22;
+  labeled('Code postal :', 'code_postal', M, y - 4, 150); labeled('Ville :', 'ville', M + 162, y - 4, W - 2 * M - 162); y -= 22;
+  labeled('Téléphone :', 'telephone', M, y - 4, half, ad.tel); labeled('E-mail :', 'email', M + half + 12, y - 4, half); y -= 26;
+  rrect(M, y - 52, W - 2 * M, 60, 4, { fill: LIGHT });
+  text("PERSONNE À PRÉVENIR EN CAS D'URGENCE", M + 10, y - 6, 8.5, FB, RED);
+  labeled('Nom et prénom :', 'urgence_nom', M + 10, y - 28, half - 10); labeled('Lien :', 'urgence_lien', M + half + 12, y - 28, half - 10);
+  labeled('Téléphone :', 'urgence_tel', M + 10, y - 48, half - 10); y -= 72;
+  section(2, 'INFORMATIONS SPORTIVES');
+  text('Avez-vous déjà pratiqué un art martial ou un sport de combat ?', M, y, 8.5, FB);
+  cb('pratique_oui', M + 290, y - 2); text('Oui', M + 304, y, 8.5); cb('pratique_non', M + 330, y - 2); text('Non', M + 344, y, 8.5); y -= 22;
+  labeled('Si oui, lequel et combien de temps ?', 'pratique_lequel', M, y - 4, W - 2 * M); y -= 24;
+  text('Comment avez-vous connu le club ?', M, y, 8.5, FB); y -= 18;
+  let x = M;
+  for (const [l, n] of [['Bouche à oreille', 'connu_bouche'], ['Internet / réseaux', 'connu_internet'], ['Forum des associations', 'connu_forum'], ['Démonstration', 'connu_demo']]) { cb(n, x, y - 2); text(l, x + 14, y, 8.5); x += 130; }
+  y -= 20; cb('connu_autre', M, y - 2); text('Autre :', M + 14, y, 8.5); tf('connu_autre_precision', M + 50, y - 4, W - 2 * M - 50); y -= 24;
+  text('Taille du T-shirt (adulte) :', M, y, 8.5, FB); x = M + 130;
+  for (const t of ['XS', 'S', 'M', 'L', 'XL', 'XXL']) { cb('tshirt_' + t, x, y - 2); text(t, x + 14, y, 8.5); x += 50; } y -= 28;
+  section(3, 'COTISATION  (licence et assurance incluses)');
+  feeOptions().filter(([, a]) => a != null).forEach(([l, a], i) => { cb('cotis_' + (i + 1), M, y - 2); text(l, M + 14, y, 8.5); text(fmtMoney(a), M + 330, y, 8.5, FB); y -= 17; });
+  y -= 4; text('Mode de règlement :', M, y, 8.5, FB, RED); x = M + 105;
+  for (const [l, n] of [[s.bank_iban ? 'Virement (coordonnées page 2)' : 'Virement', 'regl_virement'], ['Chèque(s)', 'regl_cheque'], ['Espèces', 'regl_especes']]) { cb(n, x, y - 2); text(l, x + 14, y, 8.5); x += F.widthOfTextAtSize(clean(l), 8.5) + 34; }
+  y -= 22; labeled('Nombre de chèques :', 'nb_cheques', M, y - 4, 160); labeled('N° du ou des chèques :', 'num_cheques', M + 172, y - 4, W - 2 * M - 172); y -= 16;
+  para(`Chèques à l'ordre de « ${s.bank_holder || club} ». Paiement possible en plusieurs chèques encaissés à des dates différentes, à indiquer au dos.`, M, y - 4, W - 2 * M, 7.5, FI, GREY);
+  footer(1);
+
+  /* Page 2 */
+  page = doc.addPage([W, H]); y = H - 36;
+  if (s.bank_iban) {
+    rrect(M, y - 104, W - 2 * M, 104, 6, { fill: PINK, stroke: RED, bw: 1.2 });
+    text('PAYER PAR VIREMENT', M + 12, y - 18, 11, FB, RED);
+    let yy = y - 36;
+    for (const [k, v] of [['Titulaire', s.bank_holder], ['IBAN', s.bank_iban], ['BIC', s.bank_bic], ['Banque', s.bank_name]]) { text(k, M + 12, yy, 8.5, FB, GREY); text(v || '', M + 72, yy, k === 'IBAN' ? 9.5 : 8.5, k === 'IBAN' || k === 'BIC' ? FC : F, DARK); yy -= 14; }
+    text('Libellé à indiquer :', M + 12, yy - 2, 8.5, FB, GREY); text("COTISATION + NOM Prénom de l'adhérent", M + 100, yy - 2, 8.5, FB, RED);
+    labeled('Date du virement :', 'virement_date', M + 330, y - 40, 175); y -= 122;
+  }
+  section(4, "AUTORISATION DU DROIT À L'IMAGE", PURPLE);
+  y = para(`J'autorise ${fede || 'le club'} à prendre des photos ou des vidéos de moi (ou de mon enfant) lors des cours ou en stage, et à les diffuser sur le site web, les réseaux sociaux ou d'autres supports de communication du club${fede ? ' ou de ' + fede : ''}.`, M, y, W - 2 * M) - 6;
+  cb('image_accepte', M, y - 2); text("J'accepte", M + 14, y, 9, FB, GREEN); cb('image_refuse', M + 100, y - 2); text('Je refuse', M + 114, y, 9, FB, RED); y -= 18; signRow('image');
+  section(5, "CONSENTEMENT À L'UTILISATION DES DONNÉES", BLUE);
+  y = para(`J'accepte que ${fede ? "l'association " + fede.replace(/^l['’]\s*/i, '') : 'le club'} collecte et utilise les données personnelles renseignées dans ce formulaire, pour la gestion de mon adhésion et de ma licence, conformément à la politique de protection des données du club ${club}${fede ? ' et de ' + fede : ''}.`, M, y, W - 2 * M);
+  y = para(`Afin de protéger la confidentialité de vos données, le club${fede ? ' et ' + fede + " s'engagent" : " s'engage"} à ne pas les divulguer, ne pas les transmettre ni les partager avec d'autres entités, entreprises ou organismes, quels qu'ils soient, conformément au Règlement général sur la protection des données (RGPD). Les informations de santé ne sont utilisées que pour vérifier l'aptitude à la pratique.`, M, y - 2, W - 2 * M, 7.8, FI, GREY) - 6;
+  cb('rgpd_accepte', M, y - 2); text("J'ai lu et j'accepte cette politique.", M + 14, y, 9, FB); y -= 18; signRow('rgpd');
+  section(6, 'LECTURE DU RÈGLEMENT INTÉRIEUR', GREEN);
+  y = para(`Le règlement intérieur du club ${docs.reglement ? 'est joint à ce dossier (annexe)' : 'est disponible auprès du bureau'}. Je reconnais l'avoir lu et l'accepter sans réserve ; j'ai également pris connaissance de la possibilité de souscrire une assurance complémentaire à celle proposée par le club.`, M, y, W - 2 * M) - 6;
+  for (const [l, n] of [["J'ai lu le règlement intérieur.", 'ri_lu'], ["Je l'accepte sans réserve.", 'ri_accepte'], ["J'ai pris connaissance de la possibilité de souscrire une assurance complémentaire.", 'ri_assurance']]) { cb(n, M, y - 2); text(l, M + 14, y, 9, FB); y -= 16; }
+  y -= 2; signRow('ri', 'Signature (+ représentant légal si mineur)');
+  section(7, 'AUTORISATION PARENTALE  (obligatoire pour les moins de 18 ans)', DARK);
+  labeled('Je soussigné(e) :', 'parent_nom', M, y - 4, half); labeled('agissant en qualité de :', 'parent_qualite', M + half + 12, y - 4, half); y -= 20;
+  labeled("représentant légal de l'enfant :", 'parent_enfant', M, y - 4, W - 2 * M); y -= 14;
+  y = para("autorise mon enfant à s'inscrire au club et à participer aux cours et stages de self-défense. J'autorise les responsables du club à prendre, en cas d'urgence, toute mesure nécessaire (appel des secours, transport vers un établissement de soins). Je m'engage à accompagner et récupérer mon enfant dans la salle, aux horaires des cours.", M, y - 4, W - 2 * M) - 4;
+  labeled('Téléphone du représentant légal :', 'parent_tel', M, y - 4, half + 60); y -= 14; signRow('parent', 'Signature du représentant légal');
+  footer(2);
+
+  /* Page 3 */
+  page = doc.addPage([W, H]); y = H - 36;
+  section(8, 'CERTIFICAT MÉDICAL OU QUESTIONNAIRE DE SANTÉ');
+  y = para(`Cochez la situation qui vous concerne. ${docs.qss || docs.qss_mineur ? 'Les questionnaires officiels sont joints en annexe : remplissez-les pour vous-même, sans nous les renvoyer, puis attestez ci-dessous.' : 'Remplissez le questionnaire officiel pour vous-même, puis attestez ci-dessous.'} Si vous répondez OUI à au moins une question, ou si vous n'êtes pas certain d'avoir compris une question, un certificat médical est obligatoire.`, M, y, W - 2 * M) - 8;
+  const block = (n, title, body, h) => { rrect(M, y - h, W - 2 * M, h + 6, 5, { fill: WHITE, stroke: LINE }); cb(n, M + 8, y - 10, 11); text(title, M + 26, y - 8, 9.5, FB, RED); return para(body, M + 26, y - 22, W - 2 * M - 36, 8.3); };
+  block('sante_certificat', 'A. Je joins un certificat médical', "Certificat de moins d'un an attestant l'absence de contre-indication à la pratique de la self-défense / des sports de combat. Obligatoire pour un adulte qui s'inscrit pour la première fois, ou dès qu'une réponse « OUI » a été donnée à un questionnaire.", 52);
+  y -= 64;
+  let yy = block('sante_qs_majeur', 'B. Adulte – renouvellement : attestation QS-SPORT (Cerfa n°15699*01)', "Je soussigné(e) ci-dessous atteste avoir renseigné le questionnaire de santé QS-SPORT Cerfa n°15699*01 et avoir répondu par la négative à l'ensemble des rubriques.", 64);
+  labeled('Nom, prénom :', 'qs_majeur_nom', M + 26, yy - 6, 250);
+  text('Date :', M + 290, yy - 2, 8.5, FB); tf('qs_majeur_date', M + 320, yy - 6, 70); text('Signature :', M + 398, yy - 2, 8.5, FB); tf('qs_majeur_signature', M + 446, yy - 10, W - 2 * M - 452, 20);
+  y -= 78;
+  yy = block('sante_qs_mineur', 'C. Mineur : attestation du questionnaire de santé du sportif mineur', "Je soussigné(e) ci-dessous, représentant légal de l'enfant, atteste que chacune des rubriques du questionnaire de santé du sportif mineur a donné lieu à une réponse négative. Le certificat médical n'est alors pas exigé (articles L. 231-2 et D. 231-1-4 du Code du sport).", 92);
+  labeled("Nom de l'enfant :", 'qs_mineur_enfant', M + 26, yy - 6, 220); labeled('Représentant légal :', 'qs_mineur_parent', M + 256, yy - 6, W - 2 * M - 262); yy -= 20;
+  text('Date :', M + 26, yy - 2, 8.5, FB); tf('qs_mineur_date', M + 56, yy - 6, 70); text('Signature :', M + 140, yy - 2, 8.5, FB); tf('qs_mineur_signature', M + 188, yy - 10, 200, 20);
+  y -= 108;
+  rrect(M, y - 150, W - 2 * M, 150, 6, { fill: DARK });
+  text('DOSSIER À RETOURNER', M + 12, y - 18, 11, FB, WHITE); yy = y - 38;
+  for (const it of ['Cette fiche complétée, avec les cases cochées et les signatures', "Le certificat médical, OU l'attestation B (adulte) / C (mineur) ci-dessus", "L'autorisation parentale (section 7) pour les moins de 18 ans", 'Le règlement de la cotisation : virement (libellé « COTISATION + NOM Prénom »), chèque(s) ou espèces']) {
+    page.drawRectangle({ x: M + 14, y: yy - 1, width: 7, height: 7, color: RED }); text(it, M + 28, yy, 8.5, F, WHITE); yy -= 15; }
+  yy -= 4; text('Comment le renvoyer ?', M + 14, yy, 9, FB, RED); yy -= 14;
+  const ways = ['par WhatsApp' + (s.whatsapp_number ? ' au ' + s.whatsapp_number : ''), s.club_email ? 'par e-mail à ' + s.club_email : '', "ou remis en main propre au début d'un cours" + (s.club_address ? ` (${s.club_address})` : '')].filter(Boolean);
+  para('PDF complété ou photo lisible : ' + ways.join(', ') + '.', M + 14, yy, W - 2 * M - 28, 8.5, F, WHITE);
+  y -= 168;
+  rrect(M, y - 92, W - 2 * M, 92, 5, { stroke: GREY, dash: [3, 2] });
+  text('RÉSERVÉ AU CLUB', M + 12, y - 16, 9.5, FB, GREY);
+  [['Dossier complet', 'club_complet'], ['Cotisation réglée', 'club_cotisation'], ['Licence enregistrée', 'club_licence'], ['Assurance', 'club_assurance'], ['Certificat / attestation santé', 'club_sante'], ['Autorisation parentale', 'club_parent']].forEach(([l, n], i) => {
+    const xx = M + 12 + Math.floor(i / 3) * 170, y2 = y - 34 - (i % 3) * 16; cb(n, xx, y2 - 2); text(l, xx + 14, y2, 8.5, F, GREY); });
+  text('Observations :', M + 352, y - 32, 8.5, FB, GREY); tf('club_observations', M + 352, y - 84, W - 2 * M - 362, 46, { multiline: true });
+  footer(3);
+
+  /* Annexes : règlement intérieur, questionnaires, RIB */
+  const problems = [];
+  for (const d of CLUB_DOCS.filter(x => !x.image)) {
+    const f = docs[d.key]; if (!f) continue;
+    try {
+      const bytes = await fetchDoc(f);
+      if (/pdf/i.test(f.type || f.path)) {
+        const src = await PDFDocument.load(bytes, { ignoreEncryption: true });
+        (await doc.copyPages(src, src.getPageIndices())).forEach(p => doc.addPage(p));
+      } else {
+        const im = /png/i.test(f.type || f.path) ? await doc.embedPng(bytes) : await doc.embedJpg(bytes);
+        page = doc.addPage([W, H]); text(d.label.toUpperCase(), M, H - 40, 12, FB, RED);
+        const k = Math.min((W - 2 * M) / im.width, (H - 100) / im.height, 1.5);
+        page.drawImage(im, { x: (W - im.width * k) / 2, y: H - 60 - im.height * k, width: im.width * k, height: im.height * k });
+      }
+    } catch { problems.push(d.label); }
+  }
+  form.updateFieldAppearances(F);
+  return { bytes: await doc.save(), problems };
+}
+
 async function openRegistrations() {
   const { data, error } = await sb.from('registrations').select('*').eq('status', 'nouvelle').order('created_at');
   if (error) return fail(error);
@@ -1526,10 +1805,13 @@ async function openRegistrations() {
           <dt>Urgence</dt><dd>${esc(d.emergency_contact || '—')} · ${esc(d.emergency_phone || '')}</dd>
           ${minor ? `<dt>Responsable légal</dt><dd>${esc(d.guardian_name || '—')} · ${esc(d.guardian_phone || '')}</dd><dt>Autorisation parentale</dt><dd>${yes(d.parental_authorization)}</dd>` : ''}
           ${d.medical_notes ? `<dt>Info médicale</dt><dd>${esc(d.medical_notes)}</dd>` : ''}
+          <dt>Santé</dt><dd>${d.health_mode === 'certificat' ? 'Certificat médical envoyé' : d.health_mode === 'questionnaire' ? `Questionnaire de santé : toutes les réponses « Non »${d.health_attested ? ' (attesté)' : ''}` : '—'}</dd>
+          <dt>Paiement prévu</dt><dd>${esc(d.payment_method || '—')}</dd>
           <dt>Droit à l’image</dt><dd>${yes(d.consent_image)}</dd><dt>Connu par</dt><dd>${esc(d.how_found || '—')}</dd>
-        </dl></div>`; }).join('') : '<div class="empty">Aucune demande en attente.</div>',
+        </dl>${d.health_files?.length ? `<div class="row wrap mt" style="gap:6px">${healthFileButtons(d.health_files)}</div>` : ''}</div>`; }).join('') : '<div class="empty">Aucune demande en attente.</div>',
     foot: `<button class="btn" data-close>Fermer</button>`,
     onMount: root => {
+      $$('.reg-card', root).forEach(card => bindHealthFiles(card, data.find(x => x.id === card.dataset.r)?.data?.health_files));
       $$('[data-accept]', root).forEach(b => b.onclick = async () => {
         const r = data.find(x => x.id === b.dataset.accept), d = r.data || {};
         const allowed = ['first_name', 'last_name', 'email', 'phone', 'address', 'birth_date', 'gender', 'tshirt_size', 'fee_type', 'emergency_contact', 'emergency_phone', 'how_found', 'other_defense_sport', 'other_defense_sport_details', 'consent_image', 'consent_data', 'rules_read', 'rules_accepted', 'insurance_informed', 'medical_notes', 'guardian_name', 'guardian_phone', 'guardian_email', 'parental_authorization', 'pickup_persons'];
@@ -1538,6 +1820,9 @@ async function openRegistrations() {
         const disc = S.disciplines.filter(x => x.is_active);
         const firstLevel = S.levels.filter(l => l.is_active).sort((a, b) => a.rank - b.rank)[0];
         Object.assign(member, { status: 'actif', member_role: 'membre', registration_date: isoDay(new Date()), fee_amount: fee?.[1] ?? null, discipline_id: disc.length === 1 ? disc[0].id : null, level_id: firstLevel?.id || null });
+        if (d.health_mode === 'certificat' && d.health_files?.some(f => f.kind === 'certificat')) member.medical_certificate = true;
+        if (d.health_mode === 'questionnaire' && d.health_attested) member.qss = true;
+        if (d.health_files?.length) member.health_files = d.health_files;
         b.disabled = true;
         const { data: created, error } = await sb.from('members').insert(member).select('id').single();
         if (error) { b.disabled = false; return fail(error); }
@@ -1549,6 +1834,8 @@ async function openRegistrations() {
         if (!await confirmBox('Refuser la demande', `Refuser et supprimer la demande de ${esc(r.data?.first_name || '')} ${esc(r.data?.last_name || '')} ? Ses informations seront effacées.`, 'Refuser')) return;
         const { error } = await sb.from('registrations').delete().eq('id', r.id);
         if (error) return fail(error);
+        const paths = (r.data?.health_files || []).map(f => f.path);
+        if (paths.length) sb.storage.from('inscriptions').remove(paths).catch(() => {});
         toast('Demande refusée et supprimée'); route();
       });
     },
@@ -1753,7 +2040,7 @@ async function downloadBackup(btn) {
     const courseOf = id => courses.find(c => c.id === id);
     const seasonOf = id => seasons.find(s => s.id === id)?.label || '';
     const yn = v => v === true ? 'Oui' : v === false ? 'Non' : v;
-    const clean = rows => rows.map(r => Object.fromEntries(Object.entries(r).filter(([k]) => k !== 'legacy').map(([k, v]) => [k, Array.isArray(v) ? v.join(' | ') : yn(v)])));
+    const clean = rows => rows.map(r => Object.fromEntries(Object.entries(r).filter(([k]) => k !== 'legacy').map(([k, v]) => [k, Array.isArray(v) ? (v.some(x => x && typeof x === 'object') ? JSON.stringify(v) : v.join(' | ')) : v && typeof v === 'object' ? JSON.stringify(v) : yn(v)])));
     const sheets = {
       'Membres': clean(members.map(m => ({ ...m, discipline: discName(m.discipline_id), niveau: levelName(m.level_id) }))),
       'Paiements': clean(payments.map(p => ({ membre: nameOf(p.member_id), saison: seasonOf(p.season_id), ...p }))),
@@ -1785,6 +2072,7 @@ async function downloadBackup(btn) {
 /* ---------- Restauration ---------- */
 const BOOL_COLS = new Set(['medical_certificate', 'qss', 'medical_waiver', 'other_defense_sport', 'consent_image', 'consent_data', 'rules_read', 'rules_accepted', 'insurance_informed', 'parental_authorization', 'present', 'done', 'bank_checked', 'archived', 'is_active']);
 const ARRAY_COLS = new Set(['revenue_types', 'expense_categories', 'rooms', 'plan_sections']);
+const JSON_COLS = new Set(['club_documents', 'health_files']);
 const DATE_COLS = new Set(['birth_date', 'registration_date', 'medical_waiver_validity', 'course_date', 'payment_date', 'due_date', 'expense_date', 'changed_on']);
 const TIME_COLS = new Set(['start_time', 'end_time', 'default_start_time', 'default_end_time']);
 const PHONE_COLS = new Set(['phone', 'emergency_phone', 'guardian_phone', 'whatsapp_number']);
@@ -1792,6 +2080,7 @@ const PHONE_COLS = new Set(['phone', 'emergency_phone', 'guardian_phone', 'whats
 function normalizeCell(k, v) {
   if (v === undefined || v === null) return null;
   if (BOOL_COLS.has(k)) return v === true || /^(oui|true|vrai|1)$/i.test(String(v).trim());
+  if (JSON_COLS.has(k)) { try { return String(v).trim() ? JSON.parse(v) : (k === 'club_documents' ? {} : null); } catch { return k === 'club_documents' ? {} : null; } }
   if (ARRAY_COLS.has(k)) return String(v).trim() ? String(v).split(' | ').map(x => x.trim()).filter(Boolean) : [];
   if (v instanceof Date) {
     if (TIME_COLS.has(k)) return `${pad2(v.getHours())}:${pad2(v.getMinutes())}:00`;
