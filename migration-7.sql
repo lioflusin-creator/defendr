@@ -25,6 +25,8 @@ insert into storage.buckets (id, name, public, file_size_limit)
 drop policy if exists "admin ajoute documents" on storage.objects;
 drop policy if exists "admin modifie documents" on storage.objects;
 drop policy if exists "admin supprime documents" on storage.objects;
+drop policy if exists "public lit documents" on storage.objects;
+create policy "public lit documents" on storage.objects for select using (bucket_id = 'documents');
 create policy "admin ajoute documents" on storage.objects for insert to authenticated with check (bucket_id = 'documents' and public.is_admin());
 create policy "admin modifie documents" on storage.objects for update to authenticated using (bucket_id = 'documents' and public.is_admin());
 create policy "admin supprime documents" on storage.objects for delete to authenticated using (bucket_id = 'documents' and public.is_admin());

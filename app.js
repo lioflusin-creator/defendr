@@ -1026,7 +1026,7 @@ async function viewSettings(view) {
         <div class="row" style="gap:8px"><input class="input" id="reg-url" readonly value="${esc(registrationUrl())}" aria-label="Lien d’inscription"><button class="btn" id="reg-copy">${icon('copy')}</button></div>
         <div class="row wrap mt" style="gap:8px"><a class="btn btn-sm" href="${esc(waUrl(null, `Pour t’inscrire au ${S.settings?.club_name || 'club'}, remplis ta fiche ici : ${registrationUrl()}`))}" target="_blank" rel="noopener">${icon('chat')}Partager sur WhatsApp</a><a class="btn btn-sm" href="${esc(registrationUrl())}" target="_blank" rel="noopener">Voir la page</a></div>
         <div class="section-title mt">Dossier PDF à signer</div>
-        <p class="small muted">Pour les personnes qui préfèrent remplir et signer un PDF : fiche complète (cotisation, virement, droit à l’image, règlement, autorisation parentale, santé), suivie des documents du club en annexe.</p>
+        <p class="small muted">Pour les personnes qui préfèrent remplir et signer un PDF : un lien vers la fiche complète, envoyé par WhatsApp (cotisation, virement, droit à l’image, règlement, autorisation parentale, santé), suivie des documents du club en annexe.</p>
         <button class="btn btn-primary" id="pdf-send">${icon('chat')}Envoyer le dossier PDF par WhatsApp</button>
       </div>
     </div>`;
@@ -1596,43 +1596,41 @@ function bindHealthFiles(root, files) {
 
 /* ---------- Dossier d'inscription PDF à signer, envoyé par WhatsApp ---------- */
 function openPdfDossier() {
+  const slug = v => String(v || '').normalize('NFD').replace(/[̀-ͯ]/g, '').replace(/[^A-Za-z0-9]+/g, '_').replace(/^_|_$/g, '');
   let pdfFile = null;
   openModal({
     title: 'Dossier PDF à signer', size: 'sm',
-    body: `<form id="pd-f"><p class="small muted" style="margin-top:0">Le nom et le téléphone sont pré-remplis dans le PDF ; la personne complète et signe le reste.</p>
+    body: `<form id="pd-f"><p class="small muted" style="margin-top:0">Le message WhatsApp contiendra un lien vers le dossier PDF : la personne l’ouvre d’un simple toucher, le remplit, le signe et vous le renvoie.</p>
       <div class="field"><label for="pd-fn">Prénom</label><input class="input" id="pd-fn" name="prenom" autocomplete="off"></div>
-      <div class="field"><label for="pd-ln">Nom</label><input class="input" id="pd-ln" name="nom" autocomplete="off"></div>
-      <div class="field"><label for="pd-ph">Téléphone WhatsApp</label><input class="input" id="pd-ph" name="tel" type="tel" autocomplete="off" placeholder="06 12 34 56 78"></div>
+      <div class="field"><label for="pd-ph">Téléphone WhatsApp</label><input class="input" id="pd-ph" name="tel" type="tel" autocomplete="off" placeholder="06 12 34 56 78"><span class="help">Laissez vide pour choisir la personne ou le groupe dans WhatsApp.</span></div>
       <div id="pd-msg"></div></form>`,
-    foot: `<button class="btn" data-close>Fermer</button><button class="btn btn-primary" id="pd-make">${icon('file')}Préparer le PDF</button><button class="btn" id="pd-chat" hidden>${icon('chat')}Ouvrir la discussion</button><button class="btn btn-primary" id="pd-share" hidden>${icon('up')}Partager le PDF</button>`,
+    foot: `<button class="btn" data-close>Fermer</button><button class="btn btn-primary" id="pd-make">${icon('file')}Préparer le dossier</button><a class="btn btn-primary" id="pd-wa" href="#" target="_blank" rel="noopener" hidden>${icon('chat')}Envoyer sur WhatsApp</a>`,
     onMount: root => {
-      const form = $('#pd-f', root), msg = $('#pd-msg', root), make = $('#pd-make', root), share = $('#pd-share', root), chat = $('#pd-chat', root);
-      const text = () => { const p = form.prenom.value.trim(); return `Bonjour${p ? ' ' + p : ''},\n\nvoici ton dossier d’inscription au ${S.settings?.club_name || 'club'}${activeSeason() ? ' pour la saison ' + activeSeason().label : ''}.\n\n1. Remplis et signe le PDF (sur ton téléphone ou imprimé).\n2. Joins ton certificat médical ou signe l’attestation de santé (page 3).\n3. Règle la cotisation : virement (coordonnées page 2), chèque ou espèces.\n\nRenvoie-nous le tout ici ou apporte-le au prochain cours. À très vite sur le tatami ! 👊`; };
-      form.oninput = () => { pdfFile = null; share.hidden = true; chat.hidden = true; make.hidden = false; msg.innerHTML = ''; };
-      chat.onclick = () => { const link = waUrl(form.tel.value.trim(), text().replace('voici ton dossier', 'je t’envoie ton dossier')); if (link) window.open(link, '_blank', 'noopener'); };
+      const form = $('#pd-f', root), msg = $('#pd-msg', root), make = $('#pd-make', root), wa = $('#pd-wa', root);
+      let pdfUrl = null;
+      const text = () => { const p = form.prenom.value.trim(); return `Bonjour${p ? ' ' + p : ''},\n\nvoici ton dossier d’inscription au ${S.settings?.club_name || 'club'}${activeSeason() ? ' pour la saison ' + activeSeason().label : ''} :\n${pdfUrl}\n\n1. Ouvre le PDF, remplis-le et signe-le (sur ton téléphone ou imprimé).\n2. Joins ton certificat médical ou signe l’attestation de santé (page 3).\n3. Règle la cotisation : virement (coordonnées page 2), chèque ou espèces.\n\nRenvoie-nous le tout ici ou apporte-le au prochain cours. À très vite sur le tatami !`; };
+      const refreshLink = () => { if (pdfUrl) wa.href = waUrl(form.tel.value.trim() || null, text()) || waUrl(null, text()); };
+      form.oninput = refreshLink;
       make.onclick = async () => {
-        make.disabled = true; make.textContent = 'Préparation…';
+        make.disabled = true; make.textContent = 'Préparation…'; msg.innerHTML = '';
         try {
-          const d = readForm(form);
-          const { bytes, problems } = await buildDossierPdf({ prenom: d.prenom || '', nom: d.nom || '', tel: d.tel || '' });
-          const slug = v => String(v || '').normalize('NFD').replace(/[̀-ͯ]/g, '').replace(/[^A-Za-z0-9]+/g, '_').replace(/^_|_$/g, '');
-          const name = ['Dossier_inscription', slug(S.settings?.club_name), slug(d.nom), slug(d.prenom)].filter(Boolean).join('_') + '.pdf';
-          pdfFile = new File([bytes], name, { type: 'application/pdf' });
-          make.hidden = true; share.hidden = false; chat.hidden = !waLink(d.tel);
-          msg.innerHTML = `<div class="alert ${problems.length ? 'error' : 'info'}" style="margin:0">${problems.length ? `PDF prêt, mais ces documents n’ont pas pu être ajoutés : ${esc(problems.join(', '))}. Vérifiez-les dans Documents et paiement de l’inscription.` : 'PDF prêt.'} ${navigator.canShare?.({ files: [pdfFile] }) ? '<br><br><strong>Partager le PDF</strong> : dans le menu qui s’ouvre, WhatsApp n’est pas toujours en premier. Faites glisser la rangée d’applications vers la gauche, ou touchez « Plus », puis WhatsApp et la personne. Astuce : dans « Plus », touchez « Modifier » et ajoutez WhatsApp aux favoris pour qu’il apparaisse en premier.' + (waLink(d.tel) ? '<br><br>La personne n’est pas dans vos contacts ? Touchez d’abord <strong>Ouvrir la discussion</strong> (WhatsApp s’ouvre sur son numéro avec le message), puis revenez ici pour partager le PDF dans cette discussion.' : '') : 'Le PDF va être téléchargé et WhatsApp s’ouvrira avec le message : joignez-y le PDF (trombone → Document).'}</div>`;
-        } catch (e) { fail(e); }
-        finally { make.disabled = false; make.innerHTML = `${icon('file')}Préparer le PDF`; }
-      };
-      share.onclick = async () => {
-        if (!pdfFile) return;
-        if (navigator.canShare?.({ files: [pdfFile] })) {
-          try { await navigator.share({ files: [pdfFile], text: text() }); return; }
-          catch (e) { if (e?.name === 'AbortError') return; }
-        }
-        const a = document.createElement('a'); a.href = URL.createObjectURL(pdfFile); a.download = pdfFile.name; document.body.appendChild(a); a.click(); a.remove();
-        setTimeout(() => URL.revokeObjectURL(a.href), 60000);
-        const link = waUrl(form.tel.value.trim() || null, text());
-        if (link) window.open(link, '_blank', 'noopener');
+          const { bytes, problems } = await buildDossierPdf({ prenom: '', nom: '', tel: '' });
+          pdfFile = new File([bytes], `Dossier_inscription_${slug(S.settings?.club_name) || 'club'}.pdf`, { type: 'application/pdf' });
+          // Le dossier en ligne ne contient aucune donnée personnelle ; l'ancien est retiré à chaque nouvel envoi
+          const path = `dossier/${Date.now().toString(36)}/${pdfFile.name}`;
+          const { error } = await sb.storage.from('documents').upload(path, pdfFile, { contentType: 'application/pdf' });
+          if (error) throw error;
+          pdfUrl = sb.storage.from('documents').getPublicUrl(path).data.publicUrl;
+          const docs = { ...(S.settings.club_documents || {}) }, old = docs.dossier;
+          docs.dossier = { path, name: pdfFile.name, type: 'application/pdf', updated_at: new Date().toISOString() };
+          const { error: e2 } = await sb.from('club_settings').update({ club_documents: docs }).eq('id', 1);
+          if (!e2) { S.settings.club_documents = docs; if (old?.path) sb.storage.from('documents').remove([old.path]).catch(() => {}); }
+          refreshLink(); make.hidden = true; wa.hidden = false;
+          msg.innerHTML = `<div class="alert ${problems.length ? 'error' : 'info'}" style="margin:0">${problems.length ? `Dossier prêt, mais ces documents n’ont pas pu être ajoutés : ${esc(problems.join(', '))}. Vérifiez-les dans Documents et paiement de l’inscription.` : 'Dossier prêt.'} Touchez <strong>Envoyer sur WhatsApp</strong> : le message part avec le lien du PDF.<div class="mt"><a href="${esc(pdfUrl)}" target="_blank" rel="noopener">Voir le PDF</a></div></div>`;
+        } catch (e) {
+          fail(e);
+          msg.innerHTML = `<div class="alert error" style="margin:0">Le dossier n’a pas pu être mis en ligne. Vérifiez que migration-7.sql a bien été exécuté dans Supabase.</div>`;
+        } finally { make.disabled = false; make.innerHTML = `${icon('file')}Préparer le dossier`; }
       };
     },
   });
