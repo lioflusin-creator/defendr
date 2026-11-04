@@ -421,3 +421,9 @@ create policy "staff lit cours" on storage.objects for select to authenticated u
 create policy "staff ajoute cours" on storage.objects for insert to authenticated with check (bucket_id = 'cours' and public.is_staff());
 create policy "staff modifie cours" on storage.objects for update to authenticated using (bucket_id = 'cours' and public.is_staff());
 create policy "staff supprime cours" on storage.objects for delete to authenticated using (bucket_id = 'cours' and public.is_staff());
+
+-- Liaison avec le tableur ADAC National (migration-5.sql)
+alter table public.club_settings
+  add column if not exists adac_url text,
+  add column if not exists adac_key text,
+  add column if not exists adac_discipline text default 'BDR';
