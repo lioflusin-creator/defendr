@@ -1608,14 +1608,14 @@ function openPdfDossier() {
     onMount: root => {
       const form = $('#pd-f', root), msg = $('#pd-msg', root), make = $('#pd-make', root), wa = $('#pd-wa', root);
       let pdfUrl = null;
-      const text = () => { const p = form.prenom.value.trim(); return `Bonjour${p ? ' ' + p : ''},\n\nvoici ton dossier d’inscription au ${S.settings?.club_name || 'club'}${activeSeason() ? ' pour la saison ' + activeSeason().label : ''} :\n${pdfUrl}\n\n1. Ouvre le PDF, remplis-le et signe-le (sur ton téléphone ou imprimé).\n2. Joins ton certificat médical ou signe l’attestation de santé (page 3).\n3. Règle la cotisation : virement (coordonnées page 2), chèque ou espèces.\n\nRenvoie-nous le tout ici ou apporte-le au prochain cours. À très vite sur le tatami !`; };
+      const text = () => { const p = form.prenom.value.trim(); return `Bonjour${p ? ' ' + p : ''},\n\nvoici ton dossier d’inscription au ${S.settings?.club_name || 'club'}${activeSeason() ? ' pour la saison ' + activeSeason().label : ''}. Touche le lien pour l’ouvrir :\n\n${pdfUrl}\n\n1. Ouvre le PDF, remplis-le et signe-le (sur ton téléphone ou imprimé).\n2. Joins ton certificat médical ou signe l’attestation de santé (page 3).\n3. Règle la cotisation : virement (coordonnées page 2), chèque ou espèces.\n\nRenvoie-nous le tout ici ou apporte-le au prochain cours. À très vite sur le tatami !`; };
       const refreshLink = () => { if (pdfUrl) wa.href = waUrl(form.tel.value.trim() || null, text()) || waUrl(null, text()); };
       form.oninput = refreshLink;
       make.onclick = async () => {
         make.disabled = true; make.textContent = 'Préparation…'; msg.innerHTML = '';
         try {
           const { bytes, problems } = await buildDossierPdf({ prenom: '', nom: '', tel: '' });
-          pdfFile = new File([bytes], `Dossier_inscription_${slug(S.settings?.club_name) || 'club'}.pdf`, { type: 'application/pdf' });
+          pdfFile = new File([bytes], `dossier-inscription-${slug(S.settings?.club_name).replace(/_/g, '-').toLowerCase() || 'club'}.pdf`, { type: 'application/pdf' }); // pas de « _ » : WhatsApp le prendrait pour de l'italique et casserait le lien
           // Le dossier en ligne ne contient aucune donnée personnelle ; l'ancien est retiré à chaque nouvel envoi
           const path = `dossier/${Date.now().toString(36)}/${pdfFile.name}`;
           const { error } = await sb.storage.from('documents').upload(path, pdfFile, { contentType: 'application/pdf' });
