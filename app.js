@@ -97,6 +97,7 @@ const I = {
   left: '<path d="M15 5l-7 7 7 7"/>',
   up: '<path d="M5 15l7-7 7 7"/>',
   right: '<path d="M9 5l7 7-7 7"/>',
+  book: '<path d="M4 5.5A2.5 2.5 0 0 1 6.5 3H20v15H6.5A2.5 2.5 0 0 0 4 20.5z"/><path d="M4 20.5A2.5 2.5 0 0 0 6.5 23H20v-5"/><path d="M8 7h8M8 11h6"/>',
   file: '<path d="M14 3H6a1 1 0 0 0-1 1v16a1 1 0 0 0 1 1h12a1 1 0 0 0 1-1V8z"/><path d="M14 3v5h5M9 13h6M9 17h6"/>',
   copy: '<rect x="8" y="8" width="12" height="12" rx="2"/><path d="M16 8V5a1 1 0 0 0-1-1H5a1 1 0 0 0-1 1v10a1 1 0 0 0 1 1h3"/>',
   check: '<path d="m5 12 5 5 9-10"/>',
@@ -145,6 +146,7 @@ const NAV = [
   { path: '/membres', label: 'Membres', short: 'Membres', icon: 'users' },
   { path: '/planning', label: 'Planning', short: 'Planning', icon: 'calendar' },
   { path: '/planification', label: 'Planification annuelle', icon: 'list' },
+  { path: '/guide', label: 'Guide enseignant', icon: 'book' },
   { path: '/paiements', label: 'Comptabilité', short: 'Compta', icon: 'euro', admin: true },
   { path: '/disciplines', label: 'Disciplines', icon: 'target' },
   { path: '/niveaux', label: 'Niveaux', icon: 'layers' },
@@ -314,6 +316,7 @@ async function route() {
     else if (path === '/bilan' && isAdmin()) await viewBilan(view);
     else if (path === '/statistiques') await viewStats(view);
     else if (path === '/planification') await viewPlan(view);
+    else if (path === '/guide') await viewGuide(view);
     else if (path === '/whatsapp') await viewWhatsApp(view);
     else if (path === '/disciplines') await viewDisciplines(view);
     else if (path === '/niveaux') await viewLevels(view);
@@ -1930,7 +1933,42 @@ async function viewWhatsApp(view) {
    Planification annuelle
    ===================================================================== */
 const SEASON_MONTHS = [9, 10, 11, 12, 1, 2, 3, 4, 5, 6, 7, 8];
-const PLAN_SECTIONS = ['Technico tactique', 'Connaissances générales', 'Préparation physique générale', 'Préparation récupération'];
+const PLAN_SECTIONS = ['Technico tactique', 'Révisions', 'Connaissances générales', 'Préparation physique générale', 'Préparation récupération'];
+
+// Programme annuel proposé par le guide ADAC « Planifier les cours » (édition 2026), chapitre 4
+const ADAC_PROGRAM = {
+  9: { tt: ['Coups frappés poings / pieds', 'O/D poings-pieds : hérisson, déviés, blocages', 'Distances de base et attitudes'],
+       rev: ['15 min : DTT de la séance précédente'],
+       pp: ['Endurance longue, intensité faible', 'Apprentissage : burpees, planche, gainage statique', 'Souplesse', 'Équilibre et proprioception décontextualisés'] },
+  10: { tt: ['Contre-saisie et déplacement au sol', 'O/D saisies agressives et sol vs debout', 'O/D poings-pieds : déviés + riposte'],
+        rev: ['Séance 1 : stabilisation de septembre', '15 min : DTT de la séance précédente'],
+        pp: ['Endurance longue, intensité faible', 'Stabilisation des mouvements de référence + circuit décontextualisé', 'Souplesse', 'Équilibre et proprioception contextualisés'] },
+  11: { tt: ['O/D poings-pieds : esquive et saisie', 'O/D au sol vs agresseur debout', 'Lutte debout : clinch, saisir / dessaisir, tirer / pousser'],
+        rev: ['Séance 1 : stabilisation d’octobre', '15 min : DTT de la séance précédente'],
+        pp: ['Intermittent court : 15/15 à 30/30', 'Burpees, planche, gainage dynamique', 'Force haut du corps décontextualisée : pompes, biceps, concentrique', 'Souplesse'] },
+  12: { tt: ['O/D poings-pieds complet', 'Lutter : contrôler, projeter…', 'Combativité 1'],
+        rev: ['Séance 1 : stabilisation de novembre', '15 min : DTT de la séance précédente'],
+        pp: ['Intermittent long : 1/1 à 3/3', 'Circuit de pré-fatigue alterné avec paos ou pattes d’ours', 'Force haut du corps contextualisée : lutte, tirer / pousser', 'Souplesse'] },
+  1: { tt: ['O/D poings-pieds complet', 'Réagir à plusieurs face à un agresseur armé', 'Contrôles : clé bras tendu, aile de poulet'],
+       rev: ['Séance 1 : stabilisation de décembre', '15 min : DTT de la séance précédente'],
+       pp: ['Endurance longue, intensité moyenne', 'Force bas du corps décontextualisée : poussée horizontale, squat jump, concentrique', 'Souplesse'] },
+  2: { tt: ['O/D poings-pieds complet', 'O/D seul face à un agresseur armé', 'Lutter, projeter et contrôler au sol, seul ou à plusieurs'],
+       rev: ['Séance 1 : stabilisation de janvier', '15 min : DTT de la séance précédente'],
+       pp: ['Alternance endurance fondamentale / intermittent court / intermittent long', 'Force bas du corps contextualisée : pousser, soulever, déplacer', 'Souplesse'] },
+  3: { tt: ['O/D poings-pieds complet', 'Défense d’une tierce personne, seul', 'Lutter : contrôler, projeter…'],
+       rev: ['Séance 1 : stabilisation de février', 'Séance 2 : stabilisation septembre-octobre', '15 min : DTT de la séance précédente'],
+       pp: ['Endurance 6 à 8 min, intensité moyenne, contextualisée : lutte / boxe / repli', 'Force haut et bas décontextualisée : pompes, biceps, isométrie'] },
+  4: { tt: ['O/D poings-pieds complet', 'Défense d’une tierce personne, à plusieurs', 'Contrôles : clé bras tendu, aile de poulet'],
+       rev: ['Séance 1 : stabilisation de mars', 'Séance 2 : stabilisation novembre-décembre', '15 min : DTT de la séance précédente'],
+       pp: ['Temps intermédiaires, intensité alternée : 15 s à 3 min', 'Travail contextualisé : lutte / boxe / repli', 'Force haut et bas contextualisée avec résistance (élastique…)'] },
+  5: { tt: ['Préparation à l’examen'],
+       rev: ['Séance 1 : stabilisation d’avril', 'Séance 2 : stabilisation janvier-février', '15 min : DTT de la séance précédente'],
+       pp: ['Flow supervisé à vitesse variable', 'Équilibre et proprioception contextualisés : frapper depuis des positions variées'] },
+  6: { tt: ['Intégration globale : « la bagarre »'],
+       rev: ['Séance 1 : stabilisation de mai', 'Séance 2 : stabilisation mars-avril', '15 min : DTT de la séance précédente'],
+       pp: ['Flow libre à vitesse variable', 'Équilibre et proprioception contextualisés : frapper depuis des positions variées'] },
+};
+const ADAC_CATS = { tt: 'Technico tactique', rev: 'Révisions', pp: 'Préparation physique générale' };
 S.planMonth = new Date().getMonth() + 1;
 
 async function viewPlan(view) {
@@ -1961,6 +1999,7 @@ async function viewPlan(view) {
       </div>
     </div>
     ${!items.length && S.seasons.length > 1 && isAdmin() ? `<div class="alert info">Le programme de cette saison est vide. <button class="link" id="copy-plan">Copier le programme d’une saison précédente</button></div>` : ''}
+    <div class="row wrap mb" style="gap:8px"><button class="btn btn-sm" id="adac-plan">${icon('book')}Importer le programme annuel ADAC</button><a class="btn btn-sm" href="#/guide">Guide enseignant</a></div>
     <div class="grid two plan-grid">${sections.map(sec => {
       const its = ofMonth.filter(i => i.category === sec).sort((a, b) => a.position - b.position);
       const d = its.filter(i => i.done).length;
@@ -2023,6 +2062,19 @@ async function viewPlan(view) {
     if (error) return fail(error);
     toast('Élément ajouté'); route();
   });
+  $('#adac-plan').onclick = async () => {
+    const have = new Set(items.map(i => `${i.month}|${i.category}|${i.label.trim().toLowerCase()}`));
+    const rows = [];
+    for (const [m, blocks] of Object.entries(ADAC_PROGRAM)) for (const [k, cat] of Object.entries(ADAC_CATS)) {
+      let pos = Math.max(-1, ...items.filter(i => i.month === +m && i.category === cat).map(i => i.position)) + 1;
+      for (const label of blocks[k]) if (!have.has(`${m}|${cat}|${label.toLowerCase()}`)) rows.push({ season_id: season.id, month: +m, category: cat, label, position: pos++ });
+    }
+    if (!rows.length) return toast('Le programme ADAC est déjà dans la planification de cette saison.');
+    if (!await confirmBox('Programme annuel ADAC', `Ajouter ${rows.length} élément${rows.length > 1 ? 's' : ''} de septembre à juin (technico-tactique, révisions, préparation physique), d’après le guide ADAC « Planifier les cours » ? Ce qui est déjà dans votre planification est conservé et les éléments déjà présents ne sont pas ajoutés en double.`, 'Importer')) return;
+    const { error } = await sb.from('plan_items').insert(rows);
+    if (error) return fail(error);
+    toast(`${rows.length} éléments du programme ADAC ajoutés`); route();
+  };
   $('#copy-plan') && ($('#copy-plan').onclick = async () => {
     const prev = S.seasons.filter(s => s.id !== season.id);
     const { data: old, error } = await sb.from('plan_items').select('month, category, label, position, season_id').in('season_id', prev.map(s => s.id));
@@ -2033,6 +2085,63 @@ async function viewPlan(view) {
     const { error: e2 } = await sb.from('plan_items').insert(old.filter(o => o.season_id === src.id).map(({ season_id, ...o }) => ({ ...o, season_id: season.id, done: false })));
     if (e2) return fail(e2);
     toast('Programme copié'); route();
+  });
+}
+
+/* =====================================================================
+   Guide enseignant ADAC : repères clés + PDF complet (stockage privé)
+   ===================================================================== */
+const GUIDE_PATH = 'guides/adac-planifier-les-cours.pdf';
+async function viewGuide(view) {
+  const { data: signed } = await sb.storage.from('cours').createSignedUrl(GUIDE_PATH, 3600);
+  const pdf = signed?.signedUrl || null;
+  const card = (title, body) => `<div class="card card-pad">${title ? `<h2>${title}</h2>` : ''}${body}</div>`;
+  const tbl = (head, rows) => `<div class="table-wrap"><table class="table"><thead><tr>${head.map(h => `<th>${h}</th>`).join('')}</tr></thead><tbody>${rows.map(r => `<tr>${r.map(c => `<td>${c}</td>`).join('')}</tr>`).join('')}</tbody></table></div>`;
+  view.innerHTML = head('Guide enseignant', 'Repères du guide ADAC « Planifier les cours de self-défense et de combat » (édition 2026)',
+    pdf ? `<a class="btn btn-primary" href="${esc(pdf)}" target="_blank" rel="noopener">${icon('file')}Ouvrir le guide complet (PDF)</a>` : '') + `
+    ${!pdf ? `<div class="alert info row wrap between mb" style="gap:8px"><span>Le PDF complet du guide n’est pas encore dans le logiciel.${isAdmin() ? ' Ajoutez-le une fois : il sera rangé dans votre espace privé, visible uniquement par l’équipe connectée.' : ' Le président ou le trésorier peut l’ajouter.'}</span>
+      ${isAdmin() ? `<label class="btn btn-sm btn-primary" style="cursor:pointer">${icon('up')}Ajouter le PDF du guide<input type="file" id="guide-up" accept="application/pdf,.pdf" hidden></label>` : ''}</div>` : ''}
+    <div class="grid two">
+      ${card('Les 3 temps de l’apprentissage', `<ol class="small" style="padding-left:18px;margin:0">
+        <li><strong>Construire</strong> des réponses motrices simples et fiables.</li>
+        <li><strong>Entretenir</strong> : organiser les rappels pour limiter l’oubli.</li>
+        <li><strong>Restituer</strong> en mise en situation (stages CATS, jeux de rôle, situations réelles débriefées).</li></ol>
+        <p class="small muted mt">En self-défense, pas de pic de forme à une date connue : on vise une disponibilité permanente des réponses.</p>`)}
+      ${card('Trame d’une séance (1 h 30 à 2 h)', tbl(['Durée', 'Bloc', 'Progression'], [
+        ['10–15 min', 'Accueil, mise en train', 'Du général au spécifique'],
+        ['15 min', 'Récurrence (révision)', 'Lent → variable'],
+        ['35–50 min', 'Développement technico-tactique', 'Bloc → aléatoire → incertitude'],
+        ['15–25 min', 'Préparation physique', 'Décontextualisé → contextualisé'],
+        ['5–10 min', 'Retour au calme, connaissances', 'Respiration, bilan, consigne de rappel'],
+      ]) + '<p class="small muted mt">Des repères, pas une prescription : la sécurité et le niveau réel du groupe priment.</p>')}
+      ${card('Quand réviser', tbl(['Rythme', 'À faire'], [
+        ['Chaque séance', '≈ 15 min de rappel de la séance précédente'],
+        ['Chaque mois', '1re séance : stabiliser le thème du mois précédent'],
+        ['Tous les 3 à 5 mois', 'À partir de mars, 2e séance du mois : retour sur un bloc plus ancien'],
+      ]) + '<p class="small muted mt">Une révision commence lente et prévisible, puis gagne en vitesse, variabilité et incertitude.</p>')}
+      ${card('Cycle de difficulté d’une révision', `<ol class="small" style="padding-left:18px;margin:0">
+        <li>Reconstruction lente, sans incertitude</li><li>Stabilisation à vitesse modérée</li><li>Variabilité : ordre et partenaires différents</li>
+        <li>Incertitude adaptée : vrai choix, peu d’options</li><li>Réemploi contextualisé : exercice intégré, flow ou opposition aménagée</li></ol>`)}
+      ${card('Les paliers d’automatisation', `<ul class="small" style="padding-left:18px;margin:0">
+        <li><strong>Consistance</strong> : une situation, une réponse, répétée lentement et proprement.</li>
+        <li><strong>Variabilité</strong> : plusieurs stimuli, chacun sa réponse, dans un ordre qui change.</li>
+        <li><strong>Incertitude</strong> : percevoir, décider, agir, avec une difficulté adaptée au niveau.</li></ul>
+        <p class="small muted mt">Enseigner peu de « micro-blocs » courts, stables et réutilisables plutôt que de longues combinaisons.</p>`)}
+      ${card('Contrôle rapide avant le cours', `<ul class="small" style="padding-left:18px;margin:0">
+        <li>Une seule intention dominante par exercice</li><li>Une correction prioritaire à la fois</li><li>Une difficulté compatible avec la réussite et la sécurité</li>
+        <li>Une révision planifiée, pas improvisée</li><li>Un passage progressif du stable vers le variable</li><li>Une version plus simple et une plus difficile prêtes</li></ul>
+        <p class="small mt"><strong>En fin de séance :</strong> qu’est-ce qui est vraiment acquis ? que faut-il revoir la semaine prochaine ? quel exercice a le mieux fonctionné ?</p>`)}
+    </div>
+    <div class="card card-pad mt row wrap between" style="gap:8px"><span class="small">Le programme annuel du guide (septembre à juin) peut être ajouté en un clic à votre planification.</span><a class="btn btn-sm" href="#/planification">${icon('list')}Planification annuelle</a></div>
+    ${pdf && isAdmin() ? `<div class="small muted mt"><label style="cursor:pointer;text-decoration:underline">Remplacer le PDF du guide<input type="file" id="guide-up" accept="application/pdf,.pdf" hidden></label></div>` : ''}`;
+  $('#guide-up', view) && ($('#guide-up', view).onchange = async e => {
+    const file = e.target.files[0]; e.target.value = '';
+    if (!file) return;
+    if (!/pdf$/i.test(file.type || file.name)) return toast('Choisissez un fichier PDF.', 'error');
+    toast('Envoi du guide…');
+    const { error } = await sb.storage.from('cours').upload(GUIDE_PATH, file, { upsert: true, contentType: 'application/pdf' });
+    if (error) return fail(error);
+    toast('Guide ajouté'); route();
   });
 }
 
