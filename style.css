@@ -426,3 +426,20 @@ a.btn.disabled { opacity: .45; }
 .linked-plan svg { width: 14px; height: 14px; }
 .linked-plan .dot { margin: 6px 4px 0 3px; }
 .cf-plan-box { max-height: 220px; overflow-y: auto; border: 1px solid var(--line); border-radius: 10px; padding: 4px 12px 8px; }
+
+/* ---------- Bilan comptable ---------- */
+.bilan-t th, .bilan-t td { vertical-align: top; }
+.bilan-t .num { text-align: right; white-space: nowrap; width: 1%; padding-left: 12px; }
+.bilan-t tr.tot td { font-weight: 700; border-top: 2px solid var(--line); }
+.bilan-t tr.big td { font-size: 15px; }
+.acc-code { display: inline-block; min-width: 34px; font-variant-numeric: tabular-nums; color: var(--muted); font-weight: 700; font-size: 12px; }
+.bilan-grid { align-items: start; }
+.bilan-grid > * { min-width: 0; }
+@media print {
+  #print-root.print-bilan { font-size: 10.5px; }
+  #print-root.print-bilan .section-title { margin: 14px 0 6px; font-size: 13px; }
+  #print-root.print-bilan .alert { border: 1px solid #999; padding: 6px 8px; }
+  .bilan-signs { display: grid; grid-template-columns: 1fr 1fr; gap: 24px; margin-top: 18px; }
+  .bilan-signs .sign-box { height: 60px; border-bottom: 1px solid #000; margin-top: 6px; }
+}
+.bilan-signs { display: grid; grid-template-columns: 1fr 1fr; gap: 24px; margin-top: 18px; }
