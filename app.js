@@ -232,6 +232,8 @@ async function boot() {
     return bindGlobal(app);
   }
   try { await loadRefs(); } catch (e) { fail(e); }
+  // Le logiciel s'ouvre toujours sur le tableau de bord, même s'il a été quitté sur une autre page
+  if (!S.opened) { S.opened = true; if (currentPath() !== '/') history.replaceState(null, '', location.pathname + location.search + '#/'); }
   route();
 }
 
