@@ -294,6 +294,7 @@ function renderAuth(mode) {
    ===================================================================== */
 async function route() {
   if (!S.session || !S.profile || S.profile.role === 'en_attente') return;
+  const seq = S.routeSeq = (S.routeSeq || 0) + 1; // une page remplacée pendant son chargement s'arrête sans erreur
   const path = currentPath();
   $('#drawer')?.remove();
   closeModal();
@@ -317,7 +318,10 @@ async function route() {
     else if (item?.admin && !isAdmin()) view.innerHTML = `<div class="empty">Cette rubrique est réservée au président et au trésorier.</div>`;
     else if (item) viewSoon(view, item);
     else go('/');
-  } catch (e) { fail(e); view.innerHTML = `<div class="empty">Impossible de charger cette page.</div>`; }
+  } catch (e) {
+    if (seq !== S.routeSeq || !view.isConnected) return; // page déjà remplacée : erreur sans importance
+    fail(e); view.innerHTML = `<div class="empty">Impossible de charger cette page.</div>`;
+  }
 }
 
 function head(title, sub = '', actions = '') {
@@ -2366,8 +2370,13 @@ sb.auth.onAuthStateChange((event, session) => {
   const was = S.session?.user?.id;
   S.session = session;
   if (event === 'PASSWORD_RECOVERY') { S.recovery = true; return setTimeout(boot); }
-  if (event === 'SIGNED_OUT') { S.profile = null; S.authMode = 'login'; return setTimeout(boot); }
-  if (event === 'INITIAL_SESSION' || (event === 'SIGNED_IN' && was !== session?.user?.id)) setTimeout(boot);
+  if (event === 'SIGNED_OUT') { S.profile = null; S.authMode = 'login'; S.bootedFor = null; return setTimeout(boot); }
+  // À l'ouverture, Supabase peut annoncer la connexion deux fois : on ne démarre qu'une fois par compte
+  if (event === 'INITIAL_SESSION' || (event === 'SIGNED_IN' && was !== session?.user?.id)) {
+    const who = session?.user?.id || 'aucun';
+    if (S.bootedFor === who) return;
+    S.bootedFor = who; setTimeout(boot);
+  }
 });
 
 if ('serviceWorker' in navigator) {
