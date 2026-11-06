@@ -1306,10 +1306,13 @@ function attendanceLevel(rate) {
   return ['Quasi-absent', 'danger'];
 }
 function attendanceFor(m, sessions, presentIds) {
-  // Point de départ : la date d'inscription, ou la première présence si elle est antérieure (cours d'essai)
+  // Point de départ : la date d'inscription (à défaut, la première présence).
+  // Avant l'inscription, la personne ne pouvait pas venir : les séances manquées
+  // ne comptent pas. Une présence antérieure (cours d'essai) compte en bonus,
+  // sans faire entrer dans le calcul les séances qui la séparent de l'inscription.
   const firstPresent = sessions.filter(c => presentIds.has(c.id)).map(c => c.course_date).sort()[0];
-  const start = [m.registration_date, firstPresent].filter(Boolean).sort()[0];
-  const list = sessions.filter(c => !start || c.course_date >= start)
+  const start = m.registration_date || firstPresent;
+  const list = sessions.filter(c => !start || c.course_date >= start || presentIds.has(c.id))
     .map(c => ({ ...c, present: presentIds.has(c.id) }));
   const present = list.filter(c => c.present).length;
   const rate = list.length ? Math.round(present / list.length * 100) : 0;
