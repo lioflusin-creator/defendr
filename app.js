@@ -172,21 +172,20 @@ const NAV = [
   { path: '/stages', label: 'Stages', icon: 'flag' },
   { path: '/guide', label: 'Guide enseignant', icon: 'book' },
   { path: '/paiements', label: 'Comptabilité', short: 'Compta', icon: 'euro', admin: true },
-  { path: '/disciplines', label: 'Disciplines', icon: 'target' },
-  { path: '/niveaux', label: 'Niveaux', icon: 'layers' },
   { path: '/statistiques', label: 'Statistiques', short: 'Stats', icon: 'chart' },
   { path: '/whatsapp', label: 'WhatsApp', icon: 'chat' },
   { path: '/historique', label: 'Historique', icon: 'clock', admin: true },
   { path: '/parametres', label: 'Paramètres', icon: 'gear' },
   { path: '/prospects', label: 'Prospects', icon: 'star' },
 ];
+const SETTINGS_SUBPAGES = ['/disciplines', '/niveaux']; // pages ouvertes depuis les Paramètres
 const navItems = () => NAV.filter(n => !n.admin || isAdmin());
 const currentPath = () => (location.hash.replace(/^#/, '') || '/').split('?')[0];
 const go = path => { location.hash = '#' + path; };
 
 function navLinks(path) {
   return navItems().map(n => {
-    const active = n.path === '/' ? path === '/' : path.startsWith(n.path);
+    const active = n.path === '/' ? path === '/' : path.startsWith(n.path) || (n.path === '/parametres' && SETTINGS_SUBPAGES.some(p => path.startsWith(p)));
     return `<a href="#${n.path}" class="${active ? 'active' : ''}">${icon(n.icon)}<span>${esc(n.label)}</span>${n.soon ? '<span class="soon">bientôt</span>' : ''}</a>`;
   }).join('');
 }
@@ -841,7 +840,7 @@ async function viewDisciplines(view) {
   const { data: members, error } = await sb.from('members').select('discipline_id, status');
   if (error) throw error;
   S.disciplines = (await sb.from('disciplines').select('*').order('name')).data || S.disciplines;
-  view.innerHTML = head('Disciplines', `${S.disciplines.length} discipline(s) enregistrée(s)`, isAdmin() ? `<button class="btn btn-primary" id="add">${icon('plus')}Nouvelle discipline</button>` : '') +
+  view.innerHTML = `<div class="row mb"><a href="#/parametres" class="btn btn-sm">${icon('back')}Paramètres</a></div>` + head('Disciplines', `${S.disciplines.length} discipline(s) enregistrée(s)`, isAdmin() ? `<button class="btn btn-primary" id="add">${icon('plus')}Nouvelle discipline</button>` : '') +
     (S.disciplines.length ? `<div class="grid two">${S.disciplines.map(d => {
       const n = members.filter(m => m.discipline_id === d.id && m.status === 'actif').length;
       return `<div class="card card-pad"><div class="row between"><h2 style="margin:0">${esc(d.name)}</h2>${d.is_active ? '<span class="badge ok">Active</span>' : '<span class="badge">Inactive</span>'}</div>
@@ -877,7 +876,7 @@ async function viewLevels(view) {
   const { data: members, error } = await sb.from('members').select('level_id, status');
   if (error) throw error;
   S.levels = (await sb.from('levels').select('*').order('rank')).data || S.levels;
-  view.innerHTML = head('Niveaux', `${S.levels.length} niveau(x) enregistré(s)`, isAdmin() ? `<button class="btn btn-primary" id="add">${icon('plus')}Nouveau niveau</button>` : '') +
+  view.innerHTML = `<div class="row mb"><a href="#/parametres" class="btn btn-sm">${icon('back')}Paramètres</a></div>` + head('Niveaux', `${S.levels.length} niveau(x) enregistré(s)`, isAdmin() ? `<button class="btn btn-primary" id="add">${icon('plus')}Nouveau niveau</button>` : '') +
     (S.levels.length ? `<div class="card"><div class="list">${S.levels.map(l => `
       <div class="list-item" style="cursor:default"><div class="avatar">#${l.rank}</div>
         <div class="grow"><div style="font-weight:600">${esc(l.name)}</div><div class="small muted">${members.filter(m => m.level_id === l.id && m.status === 'actif').length} membre(s) actif(s)</div></div>
@@ -1466,7 +1465,9 @@ async function stageSend(st, type, sends) {
 async function viewSettings(view) {
   if (!isAdmin()) {
     view.innerHTML = head('Paramètres') + `<div class="card card-pad"><h2>Mon compte</h2><dl class="kv"><dt>Nom</dt><dd>${esc(S.profile.full_name || '—')}</dd><dt>E-mail</dt><dd>${esc(S.session.user.email)}</dd><dt>Rôle</dt><dd>${esc(roleLabel(S.profile.role))}</dd></dl>
-      <p class="small muted mt">Les réglages du club sont gérés par le président et le trésorier.</p><button class="btn mt" data-logout>${icon('logout')}Se déconnecter</button></div>`;
+      <p class="small muted mt">Les réglages du club sont gérés par le président et le trésorier.</p><button class="btn mt" data-logout>${icon('logout')}Se déconnecter</button></div>
+      <div class="mt"><div class="card card-pad"><h2>Disciplines et niveaux</h2><p class="small muted">Les disciplines enseignées au club et la progression des niveaux (grades).</p>
+      <div class="row wrap" style="gap:8px"><a class="btn" href="#/disciplines">${icon('target')}Disciplines <span class="badge">${S.disciplines.length}</span></a><a class="btn" href="#/niveaux">${icon('layers')}Niveaux <span class="badge">${S.levels.length}</span></a></div></div></div>`;
     return bindGlobal(view);
   }
   await loadRefs();
@@ -1479,6 +1480,8 @@ async function viewSettings(view) {
     <div class="tag-add"><input class="input" data-new="${key}" placeholder="${help}" aria-label="Ajouter : ${label}"><button type="button" class="btn" data-add="${key}">Ajouter</button></div></div>`;
 
   view.innerHTML = head('Paramètres', 'Configurez votre club') + `
+    <div class="mb"><div class="card card-pad"><h2>Disciplines et niveaux</h2><p class="small muted">Les disciplines enseignées au club et la progression des niveaux (grades).</p>
+      <div class="row wrap" style="gap:8px"><a class="btn" href="#/disciplines">${icon('target')}Disciplines <span class="badge">${S.disciplines.length}</span></a><a class="btn" href="#/niveaux">${icon('layers')}Niveaux <span class="badge">${S.levels.length}</span></a></div></div></div>
     <div class="grid two">
       <form class="card card-pad" id="club-form">
         <h2>Club</h2>
