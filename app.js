@@ -103,6 +103,7 @@ const I = {
   chart: '<path d="M4 20V10M10 20V4M16 20v-7M22 20H2"/>',
   chat: '<path d="M4 20l1.3-3.9A8 8 0 1 1 8 19z"/>',
   gear: '<circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.7 1.7 0 0 0 .3 1.8l.1.1a2 2 0 1 1-2.8 2.8l-.1-.1a1.7 1.7 0 0 0-1.8-.3 1.7 1.7 0 0 0-1 1.5V21a2 2 0 1 1-4 0v-.1a1.7 1.7 0 0 0-1.1-1.5 1.7 1.7 0 0 0-1.8.3l-.1.1a2 2 0 1 1-2.8-2.8l.1-.1a1.7 1.7 0 0 0 .3-1.8 1.7 1.7 0 0 0-1.5-1H3a2 2 0 1 1 0-4h.1a1.7 1.7 0 0 0 1.5-1.1 1.7 1.7 0 0 0-.3-1.8l-.1-.1a2 2 0 1 1 2.8-2.8l.1.1a1.7 1.7 0 0 0 1.8.3H9a1.7 1.7 0 0 0 1-1.5V3a2 2 0 1 1 4 0v.1a1.7 1.7 0 0 0 1 1.5 1.7 1.7 0 0 0 1.8-.3l.1-.1a2 2 0 1 1 2.8 2.8l-.1.1a1.7 1.7 0 0 0-.3 1.8V9a1.7 1.7 0 0 0 1.5 1H21a2 2 0 1 1 0 4h-.1a1.7 1.7 0 0 0-1.5 1z"/>',
+  userplus: '<circle cx="9" cy="8" r="4"/><path d="M2 21a7 7 0 0 1 14 0M19 8v6M16 11h6"/>',
   menu: '<path d="M4 7h16M4 12h16M4 17h16"/>',
   plus: '<path d="M12 5v14M5 12h14"/>',
   edit: '<path d="M4 20h4L19 9l-4-4L4 16z"/>',
@@ -163,6 +164,7 @@ function confirmBox(title, text, okLabel = 'Supprimer') {
 const NAV = [
   { path: '/', label: 'Tableau de bord', short: 'Accueil', icon: 'home' },
   { path: '/membres', label: 'Membres', short: 'Membres', icon: 'users' },
+  { path: '/inscription', label: 'Inscription en ligne', icon: 'userplus', admin: true },
   { path: '/planning', label: 'Planning', short: 'Planning', icon: 'calendar' },
   { path: '/planification', label: 'Planification annuelle', icon: 'list' },
   { path: '/guide', label: 'Guide enseignant', icon: 'book' },
@@ -339,6 +341,7 @@ async function route() {
     else if (path === '/whatsapp') await viewWhatsApp(view);
     else if (path === '/disciplines') await viewDisciplines(view);
     else if (path === '/niveaux') await viewLevels(view);
+    else if (path === '/inscription' && isAdmin()) await viewRegistration(view);
     else if (path === '/parametres') await viewSettings(view);
     else if (item?.admin && !isAdmin()) view.innerHTML = `<div class="empty">Cette rubrique est réservée au président et au trésorier.</div>`;
     else if (item) viewSoon(view, item);
@@ -900,6 +903,36 @@ async function viewLevels(view) {
 }
 
 /* =====================================================================
+   Inscription en ligne (rubrique du menu)
+   ===================================================================== */
+async function viewRegistration(view) {
+  await loadRefs(); // saison active, utilisée par le dossier PDF
+  view.innerHTML = head('Inscription en ligne', 'Le lien à envoyer aux futurs adhérents et le dossier PDF à signer') + `<div id="reg-page-banner"></div>
+    <div class="grid">
+    <div class="card card-pad">
+      <h2>Lien d’inscription</h2>
+      <p class="small muted">Envoyez ce lien aux personnes qui veulent s’inscrire : elles remplissent leur fiche elles-mêmes, envoient leur certificat médical ou leur questionnaire de santé, et la demande arrive dans la page Membres, à valider.</p>
+      <div class="row" style="gap:8px"><input class="input" id="reg-url" readonly value="${esc(registrationUrl())}" aria-label="Lien d’inscription"><button class="btn" id="reg-copy">${icon('copy')}</button></div>
+      <div class="row wrap mt" style="gap:8px"><a class="btn btn-sm" href="${esc(waUrl(null, `Pour t’inscrire au ${S.settings?.club_name || 'club'}, remplis ta fiche ici : ${registrationUrl()}`))}" target="_blank" rel="noopener">${icon('chat')}Partager sur WhatsApp</a><a class="btn btn-sm" href="${esc(registrationUrl())}" target="_blank" rel="noopener">Voir la page</a></div>
+      <div class="section-title mt">Dossier PDF à signer</div>
+      <p class="small muted">Pour les personnes qui préfèrent remplir et signer un PDF : un lien vers la fiche complète, envoyé par WhatsApp (cotisation, virement, droit à l’image, règlement, autorisation parentale, santé), suivie des documents du club en annexe.</p>
+      <button class="btn btn-primary" id="pdf-send">${icon('chat')}Envoyer le dossier PDF par WhatsApp</button>
+    </div>
+    <div class="card card-pad">
+      <h2>Documents et paiement</h2>
+      <p class="small muted">Le règlement, les questionnaires de santé, le RIB et les coordonnées bancaires proposés sur la page d’inscription et joints au dossier PDF se gèrent dans les <a href="#/parametres">Paramètres</a>.</p>
+    </div>
+    </div>`;
+  $('#reg-copy').onclick = async () => { try { await navigator.clipboard.writeText(registrationUrl()); toast('Lien copié'); } catch { $('#reg-url').select(); toast('Sélectionnez le lien pour le copier', 'error'); } };
+  $('#pdf-send').onclick = openPdfDossier;
+  sb.from('registrations').select('id', { count: 'exact', head: true }).eq('status', 'nouvelle').then(({ count }) => {
+    const box = $('#reg-page-banner'); if (!box) return;
+    box.innerHTML = `<div class="alert info row between wrap" style="gap:8px"><span>${count ? `<strong>${count} demande${count > 1 ? 's' : ''} d’inscription en ligne</strong> à traiter.` : 'Aucune nouvelle demande d’inscription.'}</span><button class="btn btn-sm${count ? ' btn-primary' : ''}" id="reg-page-open">Voir les demandes</button></div>`;
+    $('#reg-page-open').onclick = openRegistrations;
+  });
+}
+
+/* =====================================================================
    Paramètres
    ===================================================================== */
 async function viewSettings(view) {
@@ -1038,21 +1071,10 @@ async function viewSettings(view) {
           <button class="btn btn-primary" type="submit">Enregistrer</button>
         </form>
       </div>
-
-      <div class="card card-pad">
-        <h2>Inscription en ligne</h2>
-        <p class="small muted">Envoyez ce lien aux personnes qui veulent s’inscrire : elles remplissent leur fiche elles-mêmes, envoient leur certificat médical ou leur questionnaire de santé, et la demande arrive dans la page Membres, à valider.</p>
-        <div class="row" style="gap:8px"><input class="input" id="reg-url" readonly value="${esc(registrationUrl())}" aria-label="Lien d’inscription"><button class="btn" id="reg-copy">${icon('copy')}</button></div>
-        <div class="row wrap mt" style="gap:8px"><a class="btn btn-sm" href="${esc(waUrl(null, `Pour t’inscrire au ${S.settings?.club_name || 'club'}, remplis ta fiche ici : ${registrationUrl()}`))}" target="_blank" rel="noopener">${icon('chat')}Partager sur WhatsApp</a><a class="btn btn-sm" href="${esc(registrationUrl())}" target="_blank" rel="noopener">Voir la page</a></div>
-        <div class="section-title mt">Dossier PDF à signer</div>
-        <p class="small muted">Pour les personnes qui préfèrent remplir et signer un PDF : un lien vers la fiche complète, envoyé par WhatsApp (cotisation, virement, droit à l’image, règlement, autorisation parentale, santé), suivie des documents du club en annexe.</p>
-        <button class="btn btn-primary" id="pdf-send">${icon('chat')}Envoyer le dossier PDF par WhatsApp</button>
-      </div>
     </div>`;
   $('#backup').onclick = () => downloadBackup($('#backup'));
   bindAdac(view);
   $('#restore-file') && ($('#restore-file').onchange = e => { const f = e.target.files[0]; e.target.value = ''; if (f) restoreFromFile(f); });
-  $('#reg-copy').onclick = async () => { try { await navigator.clipboard.writeText(registrationUrl()); toast('Lien copié'); } catch { $('#reg-url').select(); toast('Sélectionnez le lien pour le copier', 'error'); } };
 
   const save = async (data, msg = 'Paramètres enregistrés') => {
     const { error } = await sb.from('club_settings').update(data).eq('id', 1);
@@ -1101,7 +1123,6 @@ async function viewSettings(view) {
     d.federation_label = e.target.federation_label.value.trim(); // vide = aucune fédération
     if (await save(d, 'Coordonnées enregistrées')) { $('#st-iban').value = d.bank_iban || ''; $('#st-bic').value = d.bank_bic || ''; }
   };
-  $('#pdf-send').onclick = openPdfDossier;
   const tags = $('#tags-card');
   tags.onclick = async e => {
     const rm = e.target.closest('[data-rm]'), add = e.target.closest('[data-add]');
