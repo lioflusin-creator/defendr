@@ -31,10 +31,14 @@ const today = () => { const d = new Date(); return `${d.getFullYear()}-${String(
 const clone = v => JSON.parse(JSON.stringify(v));
 const table = name => (db[name] ||= []);
 (db.members || []).forEach(m => { m.renewal_token ??= uuid(); }); // bases de démo créées avant la réinscription
+if (!db.stages) { const y = new Date().getMonth() > 2 || (new Date().getMonth() === 2 && new Date().getDate() > 8) ? new Date().getFullYear() + 1 : new Date().getFullYear(); // un stage d'exemple
+  db.stages = [{ id: 'stage-demo-1', title: 'Stage 100 % féminin – Journée de la femme', stage_date: `${y}-03-08`, start_time: '14:00:00', end_time: '17:00:00', place: 'Dojo municipal', price: 15, audience: 'Femmes, dès 15 ans',
+    description: '3 heures pour apprendre à se dégager d’une saisie, gérer le stress d’une agression et poser ses limites.\nOuvert à toutes, débutantes bienvenues. Tenue de sport conseillée, goûter offert.', created_at: new Date().toISOString() }];
+  db.stage_sends = []; }
 save();
 
 /* Historique des modifications (comme les déclencheurs de la vraie base) */
-const AUDITED = new Set(['members', 'payments', 'expenses', 'prospects', 'courses', 'seasons', 'club_settings']);
+const AUDITED = new Set(['stages', 'members', 'payments', 'expenses', 'prospects', 'courses', 'seasons', 'club_settings']);
 function audit(t, action, row, changes = null) {
   if (!AUDITED.has(t)) return;
   let label = [row.first_name, row.last_name].filter(Boolean).join(' ') || row.label || row.title || row.club_name || null;
@@ -69,6 +73,7 @@ const REL = {
 const CASCADE = {
   members: [['attendances', 'member_id'], ['level_history', 'member_id']],
   courses: [['attendances', 'course_id'], ['course_plan_items', 'course_id']],
+  stages: [['stage_sends', 'stage_id']],
   plan_items: [['course_plan_items', 'plan_item_id']],
 };
 
@@ -186,6 +191,7 @@ export function createClient() {
         for (const t of ['attendances', 'course_plan_items', 'level_history', 'payments', 'expenses', 'plan_items', 'courses', 'members', 'levels', 'disciplines', 'seasons']) db[t] = clone(p[t] || []);
         if (Array.isArray(p.club_settings) && p.club_settings.length) db.club_settings = [clone(p.club_settings[0])];
         if (Array.isArray(p.prospects)) db.prospects = clone(p.prospects);
+        if (Array.isArray(p.stages)) { db.stages = clone(p.stages); db.stage_sends = clone(p.stage_sends || []); }
         table('audit_log').push({ id: uuid(), at: nowIso(), user_name: 'Démo', table_name: 'restauration', action: 'restauration', label: 'Données restaurées depuis une sauvegarde' });
         save();
         return { data: { membres: db.members.length, paiements: db.payments.length, depenses: db.expenses.length, seances: db.courses.length, presences: db.attendances.length, planification: db.plan_items.length }, error: null };

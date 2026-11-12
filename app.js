@@ -103,6 +103,7 @@ const I = {
   chart: '<path d="M4 20V10M10 20V4M16 20v-7M22 20H2"/>',
   chat: '<path d="M4 20l1.3-3.9A8 8 0 1 1 8 19z"/>',
   gear: '<circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.7 1.7 0 0 0 .3 1.8l.1.1a2 2 0 1 1-2.8 2.8l-.1-.1a1.7 1.7 0 0 0-1.8-.3 1.7 1.7 0 0 0-1 1.5V21a2 2 0 1 1-4 0v-.1a1.7 1.7 0 0 0-1.1-1.5 1.7 1.7 0 0 0-1.8.3l-.1.1a2 2 0 1 1-2.8-2.8l.1-.1a1.7 1.7 0 0 0 .3-1.8 1.7 1.7 0 0 0-1.5-1H3a2 2 0 1 1 0-4h.1a1.7 1.7 0 0 0 1.5-1.1 1.7 1.7 0 0 0-.3-1.8l-.1-.1a2 2 0 1 1 2.8-2.8l.1.1a1.7 1.7 0 0 0 1.8.3H9a1.7 1.7 0 0 0 1-1.5V3a2 2 0 1 1 4 0v.1a1.7 1.7 0 0 0 1 1.5 1.7 1.7 0 0 0 1.8-.3l.1-.1a2 2 0 1 1 2.8 2.8l-.1.1a1.7 1.7 0 0 0-.3 1.8V9a1.7 1.7 0 0 0 1.5 1H21a2 2 0 1 1 0 4h-.1a1.7 1.7 0 0 0-1.5 1z"/>',
+  flag: '<path d="M5 21V4M5 4h11l-2 4 2 4H5"/>',
   star: '<path d="m12 3 2.8 5.7 6.2.9-4.5 4.4 1 6.2L12 17.3 6.5 20.2l1-6.2L3 9.6l6.2-.9z"/>',
   userplus: '<circle cx="9" cy="8" r="4"/><path d="M2 21a7 7 0 0 1 14 0M19 8v6M16 11h6"/>',
   menu: '<path d="M4 7h16M4 12h16M4 17h16"/>',
@@ -168,6 +169,7 @@ const NAV = [
   { path: '/inscription', label: 'Inscription en ligne', icon: 'userplus' },
   { path: '/planning', label: 'Planning', short: 'Planning', icon: 'calendar' },
   { path: '/planification', label: 'Planification annuelle', icon: 'list' },
+  { path: '/stages', label: 'Stages', icon: 'flag' },
   { path: '/guide', label: 'Guide enseignant', icon: 'book' },
   { path: '/paiements', label: 'Comptabilité', short: 'Compta', icon: 'euro', admin: true },
   { path: '/disciplines', label: 'Disciplines', icon: 'target' },
@@ -346,6 +348,7 @@ async function route() {
     else if (path === '/niveaux') await viewLevels(view);
     else if (path === '/inscription') await viewRegistration(view);
     else if (path === '/prospects') await viewProspects(view);
+    else if (path === '/stages') await viewStages(view);
     else if (path === '/historique' && isAdmin()) await viewHistory(view);
     else if (path === '/parametres') await viewSettings(view);
     else if (item?.admin && !isAdmin()) view.innerHTML = `<div class="empty">Cette rubrique est réservée au président et au trésorier.</div>`;
@@ -1242,12 +1245,12 @@ async function registrationStats(box) {
 /* =====================================================================
    Historique des modifications
    ===================================================================== */
-const AUDIT_TABLES = { members: 'Membres', payments: 'Paiements', expenses: 'Dépenses', prospects: 'Prospects', courses: 'Séances', seasons: 'Saisons', club_settings: 'Paramètres', restauration: 'Restauration' };
+const AUDIT_TABLES = { stages: 'Stages', members: 'Membres', payments: 'Paiements', expenses: 'Dépenses', prospects: 'Prospects', courses: 'Séances', seasons: 'Saisons', club_settings: 'Paramètres', restauration: 'Restauration' };
 const AUDIT_FIELDS = { first_name: 'Prénom', last_name: 'Nom', phone: 'Téléphone', email: 'E-mail', address: 'Adresse', birth_date: 'Date de naissance', status: 'Statut', level_id: 'Niveau', discipline_id: 'Discipline',
   fee_type: 'Cotisation', fee_amount: 'Montant cotisation', amount: 'Montant', payment_type: 'Type', payment_date: 'Date', method: 'Moyen de paiement', due_date: 'Encaissement prévu', bank_checked: 'Pointé en banque',
   medical_certificate: 'Certificat médical', qss: 'Questionnaire de santé', registration_date: 'Date d’inscription', member_role: 'Rôle', notes: 'Notes', label: 'Libellé', category: 'Catégorie', expense_date: 'Date',
   course_date: 'Date', title: 'Titre', start_time: 'Début', end_time: 'Fin', room: 'Salle', instructor: 'Encadrant', is_active: 'Active', opening_balance: 'Solde de départ', archived: 'Archivé',
-  trial_date: 'Date d’essai', trial_present: 'Venu(e) à l’essai', invited_at: 'Invité(e) le', trial_course_id: 'Séance d’essai', converted_at: 'Inscrit(e) le', source: 'Origine', renewal_sent_at: 'Lien de réinscription envoyé', renewed_season_id: 'Réinscrit(e) pour la saison', member_id: 'Fiche membre',
+  trial_date: 'Date d’essai', trial_present: 'Venu(e) à l’essai', invited_at: 'Invité(e) le', stage_date: 'Date du stage', place: 'Lieu', price: 'Tarif', audience: 'Public', description: 'Programme', trial_course_id: 'Séance d’essai', converted_at: 'Inscrit(e) le', source: 'Origine', renewal_sent_at: 'Lien de réinscription envoyé', renewed_season_id: 'Réinscrit(e) pour la saison', member_id: 'Fiche membre',
   emergency_contact: 'Contact d’urgence', emergency_phone: 'Tél. urgence', guardian_name: 'Responsable légal', guardian_phone: 'Tél. responsable', consent_image: 'Droit à l’image', club_documents: 'Documents du club' };
 const auditVal = (k, v, t) => {
   if (v === null || v === undefined || v === '') return '—';
@@ -1304,6 +1307,157 @@ async function memberHistory(view, id) {
   const { data, error } = await sb.from('audit_log').select('*').eq('row_id', id).order('at', { ascending: false }).limit(15);
   if (error || !data?.length || !view.isConnected || currentPath() !== '/membres/' + id) return;
   view.insertAdjacentHTML('beforeend', `<div class="card mt"><div class="card-pad" style="padding-bottom:0"><h2>Historique de la fiche</h2></div>${data.map(a => auditRow(a, false)).join('')}</div>`);
+}
+
+
+/* =====================================================================
+   Stages : événements ponctuels envoyés par WhatsApp aux prospects et aux adhérents
+   ===================================================================== */
+const stagesMissing = e => /stage|schema cache|does not exist|42P01|PGRST205/i.test(`${e?.code || ''} ${e?.message || ''}`);
+const stageWhen = st => `${longDay(st.stage_date)}${st.start_time ? `, de ${hhmm(st.start_time).replace(':', 'h')}${st.end_time ? ' à ' + hhmm(st.end_time).replace(':', 'h') : ''}` : ''}`;
+const stagePrice = st => st.price == null || st.price === '' ? '' : Number(st.price) === 0 ? 'Gratuit' : fmtMoney(st.price);
+const stageText = st => [
+  `Bonjour [PRÉNOM] ! 👋`, '',
+  `Le ${S.settings?.club_name || 'club'} organise un stage : *${st.title}*`, '',
+  `📅 ${stageWhen(st).replace(/^./, c => c.toUpperCase())}`,
+  st.place && `📍 ${st.place}`,
+  stagePrice(st) && `💶 ${stagePrice(st)}`,
+  st.audience && `👥 ${st.audience}`,
+  st.description && `\n${st.description}`, '',
+  `Pour t’inscrire, réponds simplement à ce message. À très vite sur le tatami !`,
+].filter(x => x !== null && x !== undefined && x !== false && x !== 0).join('\n').replace(/\n{3,}/g, '\n\n');
+
+function stageForm(st, onSaved) {
+  const v = st || { stage_date: isoDay(addDays(new Date(), 14)), start_time: S.settings?.default_start_time || '', end_time: S.settings?.default_end_time || '' };
+  const f = (name, label, type = 'text', extra = '', attrs = '') => `<div class="field ${extra}"><label for="sg-${name}">${label}</label><input class="input" id="sg-${name}" name="${name}" type="${type}" value="${esc(type === 'time' ? hhmm(v[name]) : v[name] ?? '')}" ${attrs}></div>`;
+  openModal({
+    title: st ? 'Modifier le stage' : 'Nouveau stage',
+    body: `<form id="sg" class="form-grid">
+      ${f('title', 'Titre *', 'text', 'full', 'placeholder="ex : Stage 100 % féminin – Journée de la femme"')}
+      ${f('stage_date', 'Date *', 'date')}${f('place', 'Lieu', 'text', '', `placeholder="${esc((S.settings?.rooms || [])[0] || 'ex : Dojo municipal')}" list="sg-rooms"`)}
+      <datalist id="sg-rooms">${(S.settings?.rooms || []).map(r => `<option value="${esc(r)}">`).join('')}</datalist>
+      ${f('start_time', 'Début', 'time')}${f('end_time', 'Fin', 'time')}
+      ${f('price', 'Tarif (€)', 'number', '', 'step="0.01" min="0" placeholder="0 = gratuit, vide = non précisé"')}${f('audience', 'Public', 'text', '', 'placeholder="ex : Femmes, dès 15 ans"')}
+      <div class="field full"><label for="sg-description">Ce que l’on trouvera dans ce stage</label><textarea class="input" id="sg-description" name="description" rows="6" placeholder="ex : 3 heures pour apprendre à se dégager d’une saisie, gérer le stress d’une agression et poser ses limites. Ouvert à toutes, débutantes bienvenues. Tenue de sport conseillée.">${esc(v.description || '')}</textarea></div>
+    </form>`,
+    foot: `<button class="btn" data-close>Annuler</button><button class="btn btn-primary" id="sg-save">Enregistrer</button>`,
+    onMount: root => $('#sg-save', root).onclick = async () => {
+      const form = $('#sg', root);
+      const d = Object.fromEntries(['title', 'stage_date', 'start_time', 'end_time', 'place', 'price', 'audience', 'description'].map(k => [k, form[k].value.trim() || null]));
+      if (!d.title || !d.stage_date) return toast('Le titre et la date sont obligatoires.', 'error');
+      if (d.price != null) d.price = Number(d.price);
+      const { error } = st ? await sb.from('stages').update(d).eq('id', st.id) : await sb.from('stages').insert(d);
+      if (error) return fail(error);
+      closeModal(); toast(st ? 'Stage modifié' : 'Stage créé'); onSaved?.();
+    },
+  });
+}
+
+async function viewStages(view) {
+  await loadRefs();
+  const [sr, er] = await Promise.all([sb.from('stages').select('*').order('stage_date'), sb.from('stage_sends').select('stage_id, target_type, target_id')]);
+  if (sr.error) {
+    if (!stagesMissing(sr.error)) throw sr.error;
+    view.innerHTML = head('Stages') + '<div class="alert error">Pour activer cette rubrique, exécutez une fois le fichier <strong>migration-11.sql</strong> dans Supabase → Éditeur SQL.</div>'; return;
+  }
+  const today = isoDay(new Date()), sends = er.data || [];
+  const upcoming = sr.data.filter(x => x.stage_date >= today), past = sr.data.filter(x => x.stage_date < today).reverse();
+  const count = (id, t) => new Set(sends.filter(x => x.stage_id === id && x.target_type === t).map(x => x.target_id)).size;
+  const card = st => `<div class="card card-pad">
+    <div class="row between wrap" style="gap:8px;align-items:flex-start"><div style="min-width:0"><h2 style="margin:0 0 4px">${esc(st.title)}</h2>
+      <div class="small muted">${esc(stageWhen(st).replace(/^./, c => c.toUpperCase()))}${st.place ? ` · ${esc(st.place)}` : ''}${stagePrice(st) ? ` · ${esc(stagePrice(st))}` : ''}</div>
+      ${st.audience ? `<div class="mt-xs"><span class="badge">${esc(st.audience)}</span></div>` : ''}</div>
+      <div class="row" style="gap:4px"><button class="icon-btn" data-edit="${st.id}" aria-label="Modifier">${icon('edit')}</button><button class="icon-btn" data-del="${st.id}" aria-label="Supprimer">${icon('trash')}</button></div></div>
+    ${st.description ? `<p class="small" style="white-space:pre-line;margin:10px 0 0">${esc(st.description)}</p>` : ''}
+    <div class="small muted mt">Envoyé à ${count(st.id, 'prospect')} prospect(s) et ${count(st.id, 'member')} adhérent(s)</div>
+    <div class="row wrap mt" style="gap:8px"><button class="btn btn-primary btn-sm" data-send="${st.id}:prospect">${icon('chat')}Envoyer aux prospects</button><button class="btn btn-primary btn-sm" data-send="${st.id}:member">${icon('chat')}Envoyer aux adhérents</button><button class="btn btn-sm" data-group="${st.id}">Partager dans un groupe</button></div>
+  </div>`;
+  view.innerHTML = head('Stages', 'Stages et événements ponctuels, à faire connaître par WhatsApp', `<button class="btn btn-primary" id="sg-new">${icon('plus')}Nouveau stage</button>`) + `
+    ${upcoming.length ? `<div class="grid two">${upcoming.map(card).join('')}</div>` : '<div class="card empty">Aucun stage à venir. Créez-en un avec « Nouveau stage ».</div>'}
+    ${past.length ? `<details class="mt"><summary class="section-title" style="cursor:pointer">Stages passés (${past.length})</summary><div class="grid two mt">${past.map(card).join('')}</div></details>` : ''}`;
+  const byId = id => sr.data.find(x => x.id === id);
+  $('#sg-new').onclick = () => stageForm(null, route);
+  view.onclick = async e => {
+    const t = e.target.closest('[data-edit],[data-del],[data-send],[data-group]'); if (!t) return;
+    if (t.dataset.edit) return stageForm(byId(t.dataset.edit), route);
+    if (t.dataset.send) { const [id, type] = t.dataset.send.split(':'); return stageSend(byId(id), type, sends); }
+    if (t.dataset.group) return window.open(waUrl(null, stageText(byId(t.dataset.group)).replace('Bonjour [PRÉNOM] !', 'Bonjour à toutes et à tous !')), '_blank', 'noopener');
+    if (t.dataset.del) {
+      const st = byId(t.dataset.del);
+      if (!await confirmBox('Supprimer le stage', `Supprimer « ${esc(st.title)} » ?`)) return;
+      const { error } = await sb.from('stages').delete().eq('id', st.id);
+      if (error) return fail(error);
+      toast('Stage supprimé'); route();
+    }
+  };
+}
+
+// Envoi d'un stage : choix des destinataires (tous ou un par un), message prêt, envoi WhatsApp personne par personne
+async function stageSend(st, type, sends) {
+  const isM = type === 'member';
+  let people;
+  if (isM) {
+    const { data, error } = await sb.from('members').select('id, first_name, last_name, phone, birth_date, gender, guardian_name, guardian_phone, status').eq('status', 'actif').order('last_name');
+    if (error) return fail(error);
+    people = data.map(m => { const minor = (ageOf(m.birth_date) ?? 99) < 18 && m.guardian_phone;
+      return { id: m.id, name: fullName(m), first: minor && m.guardian_name ? m.guardian_name.split(' ')[0] : m.first_name, phone: minor ? m.guardian_phone : m.phone, gender: m.gender, note: minor ? `responsable : ${m.guardian_name || 'parent'}` : '', minor: !!minor, child: m.first_name }; });
+  } else {
+    const { data, error } = await sb.from('prospects').select('id, first_name, last_name, phone, status').neq('status', 'inscrit').order('created_at', { ascending: false });
+    if (error) return fail(error);
+    people = data.map(p => ({ id: p.id, name: fullName(p), first: p.first_name, phone: p.phone, note: PROSPECT_STATUS[p.status] || '', off: p.status === 'abandon' }));
+  }
+  const sentAt = new Set(sends.filter(x => x.stage_id === st.id && x.target_type === type).map(x => x.target_id));
+  const reachable = people.filter(x => waLink(x.phone));
+  const noPhone = people.length - reachable.length;
+  const personal = (tpl, x) => { const t = tpl.replace(/\[PR[ÉE]NOM\]/g, x.first || ''); return x.minor ? t.replace(/^(.*)$/m, `$1\n(message au sujet de ${x.child})`) : t; };
+  openModal({
+    title: `${esc(st.title)} · envoyer aux ${isM ? 'adhérents' : 'prospects'}`,
+    body: `<div class="field"><label for="ss-msg">Message WhatsApp <span class="muted small">([PRÉNOM] est remplacé par le prénom de chacun)</span></label><textarea class="input" id="ss-msg" rows="9">${esc(stageText(st))}</textarea></div>
+      <div class="row between wrap" style="gap:8px;margin:4px 0 8px"><strong id="ss-count"></strong>
+        <div class="row wrap" style="gap:6px">${isM ? '<label class="check" style="margin:0"><input type="checkbox" id="ss-women"><span>Femmes uniquement</span></label>' : ''}
+        <label class="check" style="margin:0"><input type="checkbox" id="ss-skip" checked><span>Sauf ceux qui l’ont déjà reçu</span></label>
+        <button class="btn btn-sm" id="ss-all">Tous</button><button class="btn btn-sm" id="ss-none">Aucun</button></div></div>
+      ${reachable.length ? `<div class="att-list" id="ss-list">${reachable.map(x => `<label class="att-row" data-id="${x.id}" data-g="${esc(x.gender || '')}"><input type="checkbox">
+        <span class="avatar">${esc(initials({ first_name: x.name.split(' ')[0], last_name: x.name.split(' ').slice(1).join(' ') }))}</span>
+        <span class="grow"><span class="att-name">${esc(x.name)}</span><span class="small muted">${esc([x.note, sentAt.has(x.id) ? 'déjà reçu' : ''].filter(Boolean).join(' · '))}</span></span>
+        <a class="btn btn-sm" data-one="${x.id}" href="#" target="_blank" rel="noopener">${icon('chat')}Envoyer</a></label>`).join('')}</div>` : `<div class="empty">Aucun ${isM ? 'adhérent actif' : 'prospect'} avec un numéro de téléphone.</div>`}
+      ${noPhone ? `<p class="small muted">${noPhone} ${isM ? 'adhérent(s)' : 'prospect(s)'} sans téléphone ne figure(nt) pas dans la liste.</p>` : ''}
+      <p class="small muted">WhatsApp ne permet pas d’envoyer à plusieurs personnes d’un coup depuis un autre logiciel : le bouton ci-dessous ouvre le message déjà rédigé pour chaque personne cochée, l’une après l’autre. Il suffit de toucher « Envoyer » dans WhatsApp, puis de revenir ici.</p>`,
+    foot: `<button class="btn" id="ss-close">Fermer</button><a class="btn btn-primary" id="ss-next" href="#" target="_blank" rel="noopener">${icon('chat')}Envoyer</a>`,
+    onMount: root => {
+      const list = $('#ss-list', root), msg = $('#ss-msg', root), next = $('#ss-next', root), done = new Set();
+      const rows = () => list ? $$('.att-row', list) : [];
+      const person = id => reachable.find(x => x.id === id);
+      const select = () => {
+        const women = $('#ss-women', root)?.checked, skip = $('#ss-skip', root).checked;
+        rows().forEach(r => { const x = person(r.dataset.id), ok = !women || r.dataset.g === 'Femme'; r.style.display = ok ? '' : 'none'; $('input', r).checked = ok && !x.off && !(skip && sentAt.has(x.id)); });
+        refresh();
+      };
+      const refresh = () => {
+        rows().forEach(r => { r.classList.toggle('on', $('input', r).checked); const x = person(r.dataset.id); $('[data-one]', r).href = waUrl(x.phone, personal(msg.value, x)); });
+        const queue = rows().filter(r => $('input', r).checked && !done.has(r.dataset.id));
+        $('#ss-count', root).textContent = `${rows().filter(r => $('input', r).checked).length} destinataire(s) coché(s)${done.size ? ` · ${done.size} envoyé(s)` : ''}`;
+        if (queue.length) { const x = person(queue[0].dataset.id); next.hidden = false; next.href = waUrl(x.phone, personal(msg.value, x)); next.dataset.id = x.id; next.innerHTML = `${icon('chat')}Envoyer à ${esc(x.name)} (${queue.length} restant${queue.length > 1 ? 's' : ''})`; }
+        else { next.hidden = !done.size; next.removeAttribute('href'); next.innerHTML = done.size ? `${icon('check')}Terminé` : ''; next.dataset.id = ''; }
+      };
+      const mark = id => {
+        done.add(id); sentAt.add(id);
+        const r = rows().find(r => r.dataset.id === id); if (r) { $('input', r).checked = false; $('.small', r).textContent = [person(id).note, 'envoyé à l’instant'].filter(Boolean).join(' · '); }
+        sends.push({ stage_id: st.id, target_type: type, target_id: id });
+        sb.from('stage_sends').insert({ stage_id: st.id, target_type: type, target_id: id }).then(({ error }) => { if (error) toast('Message envoyé, mais l’envoi n’a pas pu être noté.', 'error'); });
+        setTimeout(refresh, 50);
+      };
+      list?.addEventListener('change', refresh);
+      list?.addEventListener('click', e => { const a = e.target.closest('[data-one]'); if (a) { e.stopPropagation(); mark(a.dataset.one); } else if (e.target.closest('a')) e.preventDefault(); });
+      msg.oninput = refresh;
+      $('#ss-close', root).onclick = () => { closeModal(); if (done.size && currentPath() === '/stages') route(); };
+      $('#ss-all', root).onclick = () => { rows().forEach(r => $('input', r).checked = r.style.display !== 'none'); refresh(); };
+      $('#ss-none', root).onclick = () => { rows().forEach(r => $('input', r).checked = false); refresh(); };
+      $('#ss-skip', root).onchange = select; $('#ss-women', root) && ($('#ss-women', root).onchange = select);
+      next.onclick = e => { if (!next.dataset.id) { e.preventDefault(); if (done.size) { closeModal(); if (currentPath() === '/stages') route(); } return; } mark(next.dataset.id); };
+      select();
+    },
+  });
 }
 
 /* =====================================================================
@@ -2482,6 +2636,7 @@ const BACKUP_SHEETS = {
   'Membres': 'members', 'Paiements': 'payments', 'Dépenses': 'expenses', 'Séances': 'courses', 'Présences': 'attendances',
   'Planification': 'plan_items', 'Disciplines': 'disciplines', 'Niveaux': 'levels', 'Saisons': 'seasons', 'Paramètres': 'club_settings',
   'Historique grades': 'level_history', 'Lien séances-programme': 'course_plan_items', 'Prospects': 'prospects',
+  'Stages': 'stages', 'Envois stages': 'stage_sends',
 };
 
 async function downloadBackup(btn) {
@@ -2513,6 +2668,8 @@ async function downloadBackup(btn) {
     };
     const { data: prospects } = await sb.from('prospects').select('*').order('created_at'); // absent tant que migration-9.sql n'est pas exécuté
     if (prospects) sheets['Prospects'] = clean(prospects);
+    const { data: stages } = await sb.from('stages').select('*').order('stage_date'); // absent tant que migration-11.sql n'est pas exécuté
+    if (stages) { sheets['Stages'] = clean(stages); sheets['Envois stages'] = clean((await sb.from('stage_sends').select('*').order('sent_at')).data || []); }
     const wb = XLSX.utils.book_new();
     for (const [name, rows] of Object.entries(sheets)) {
       const ws = XLSX.utils.json_to_sheet(rows.length ? rows : [{ info: 'Aucune donnée' }]);
@@ -2534,7 +2691,7 @@ async function downloadBackup(btn) {
 const BOOL_COLS = new Set(['trial_present', 'medical_certificate', 'qss', 'medical_waiver', 'other_defense_sport', 'consent_image', 'consent_data', 'rules_read', 'rules_accepted', 'insurance_informed', 'parental_authorization', 'present', 'done', 'bank_checked', 'archived', 'is_active']);
 const ARRAY_COLS = new Set(['revenue_types', 'expense_categories', 'rooms', 'plan_sections']);
 const JSON_COLS = new Set(['club_documents', 'health_files']);
-const DATE_COLS = new Set(['trial_date', 'birth_date', 'registration_date', 'medical_waiver_validity', 'course_date', 'payment_date', 'due_date', 'expense_date', 'changed_on']);
+const DATE_COLS = new Set(['stage_date', 'trial_date', 'birth_date', 'registration_date', 'medical_waiver_validity', 'course_date', 'payment_date', 'due_date', 'expense_date', 'changed_on']);
 const TIME_COLS = new Set(['start_time', 'end_time', 'default_start_time', 'default_end_time']);
 const PHONE_COLS = new Set(['phone', 'emergency_phone', 'guardian_phone', 'whatsapp_number']);
 
