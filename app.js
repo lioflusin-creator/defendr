@@ -54,7 +54,7 @@ const fmtDate = d => d ? new Date(d + (String(d).length === 10 ? 'T00:00:00' : '
 const fmtDay = d => d ? new Date(d + 'T00:00:00').toLocaleDateString('fr-FR', { day: '2-digit', month: 'long' }) : '';
 const fmtMoney = n => (Number(n) || 0).toLocaleString('fr-FR', { style: 'currency', currency: 'EUR', maximumFractionDigits: Number(n) % 1 ? 2 : 0 });
 const fullName = m => `${m.first_name ?? ''} ${m.last_name ?? ''}`.trim();
-const initials = m => ((m.first_name || '?')[0] + (m.last_name || '')[0] || '').toUpperCase();
+const initials = m => ((m.first_name || '?')[0] + ((m.last_name || '')[0] || '')).toUpperCase();
 const ageOf = d => { if (!d) return null; const b = new Date(d + 'T00:00:00'), n = new Date(); let a = n.getFullYear() - b.getFullYear(); if (n < new Date(n.getFullYear(), b.getMonth(), b.getDate())) a--; return a; };
 const isBirthdayMonth = (d, month = new Date().getMonth()) => d && new Date(d + 'T00:00:00').getMonth() === month;
 const discName = id => S.disciplines.find(d => d.id === id)?.name || '—';
@@ -103,6 +103,7 @@ const I = {
   chart: '<path d="M4 20V10M10 20V4M16 20v-7M22 20H2"/>',
   chat: '<path d="M4 20l1.3-3.9A8 8 0 1 1 8 19z"/>',
   gear: '<circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.7 1.7 0 0 0 .3 1.8l.1.1a2 2 0 1 1-2.8 2.8l-.1-.1a1.7 1.7 0 0 0-1.8-.3 1.7 1.7 0 0 0-1 1.5V21a2 2 0 1 1-4 0v-.1a1.7 1.7 0 0 0-1.1-1.5 1.7 1.7 0 0 0-1.8.3l-.1.1a2 2 0 1 1-2.8-2.8l.1-.1a1.7 1.7 0 0 0 .3-1.8 1.7 1.7 0 0 0-1.5-1H3a2 2 0 1 1 0-4h.1a1.7 1.7 0 0 0 1.5-1.1 1.7 1.7 0 0 0-.3-1.8l-.1-.1a2 2 0 1 1 2.8-2.8l.1.1a1.7 1.7 0 0 0 1.8.3H9a1.7 1.7 0 0 0 1-1.5V3a2 2 0 1 1 4 0v.1a1.7 1.7 0 0 0 1 1.5 1.7 1.7 0 0 0 1.8-.3l.1-.1a2 2 0 1 1 2.8 2.8l-.1.1a1.7 1.7 0 0 0-.3 1.8V9a1.7 1.7 0 0 0 1.5 1H21a2 2 0 1 1 0 4h-.1a1.7 1.7 0 0 0-1.5 1z"/>',
+  star: '<path d="m12 3 2.8 5.7 6.2.9-4.5 4.4 1 6.2L12 17.3 6.5 20.2l1-6.2L3 9.6l6.2-.9z"/>',
   userplus: '<circle cx="9" cy="8" r="4"/><path d="M2 21a7 7 0 0 1 14 0M19 8v6M16 11h6"/>',
   menu: '<path d="M4 7h16M4 12h16M4 17h16"/>',
   plus: '<path d="M12 5v14M5 12h14"/>',
@@ -174,6 +175,7 @@ const NAV = [
   { path: '/statistiques', label: 'Statistiques', short: 'Stats', icon: 'chart' },
   { path: '/whatsapp', label: 'WhatsApp', icon: 'chat' },
   { path: '/parametres', label: 'Paramètres', icon: 'gear' },
+  { path: '/prospects', label: 'Prospects', icon: 'star' },
 ];
 const navItems = () => NAV.filter(n => !n.admin || isAdmin());
 const currentPath = () => (location.hash.replace(/^#/, '') || '/').split('?')[0];
@@ -342,6 +344,7 @@ async function route() {
     else if (path === '/disciplines') await viewDisciplines(view);
     else if (path === '/niveaux') await viewLevels(view);
     else if (path === '/inscription') await viewRegistration(view);
+    else if (path === '/prospects') await viewProspects(view);
     else if (path === '/parametres') await viewSettings(view);
     else if (item?.admin && !isAdmin()) view.innerHTML = `<div class="empty">Cette rubrique est réservée au président et au trésorier.</div>`;
     else if (item) viewSoon(view, item);
@@ -572,8 +575,8 @@ function feeOptions() {
   ];
 }
 
-function memberForm(m, onSaved) {
-  const v = m || { status: 'actif', member_role: 'membre', registration_date: new Date().toISOString().slice(0, 10) };
+function memberForm(m, onSaved, prefill = {}) {
+  const v = m || { status: 'actif', member_role: 'membre', registration_date: new Date().toISOString().slice(0, 10), ...prefill };
   const sel = (name, opts, cur) => `<select class="input" name="${name}" id="mf-${name}"><option value="">—</option>${opts.map(([val, lab]) => `<option value="${esc(val)}" ${String(cur ?? '') === String(val) ? 'selected' : ''}>${esc(lab)}</option>`).join('')}</select>`;
   const inp = (name, label, type = 'text', extra = '') => `<div class="field ${extra}"><label for="mf-${name}">${label}</label><input class="input" id="mf-${name}" name="${name}" type="${type}" value="${esc(v[name] ?? '')}" ${type === 'number' ? 'step="0.01" min="0" inputmode="decimal"' : ''}></div>`;
   const chk = (name, label) => `<label class="check full"><input type="checkbox" name="${name}" ${v[name] ? 'checked' : ''}><span>${label}</span></label>`;
@@ -913,10 +916,11 @@ async function viewRegistration(view) {
       <h2>Lien d’inscription</h2>
       <p class="small muted">Envoyez ce lien aux personnes qui veulent s’inscrire : elles remplissent leur fiche elles-mêmes, envoient leur certificat médical ou leur questionnaire de santé, et la demande arrive dans la page Membres, à valider.</p>
       <div class="row" style="gap:8px"><input class="input" id="reg-url" readonly value="${esc(registrationUrl())}" aria-label="Lien d’inscription"><button class="btn" id="reg-copy">${icon('copy')}</button></div>
-      <div class="row wrap mt" style="gap:8px"><a class="btn btn-sm" href="${esc(waUrl(null, `Pour t’inscrire au ${S.settings?.club_name || 'club'}, remplis ta fiche ici : ${registrationUrl()}`))}" target="_blank" rel="noopener">${icon('chat')}Partager sur WhatsApp</a><a class="btn btn-sm" href="${esc(registrationUrl())}" target="_blank" rel="noopener">Voir la page</a></div>
+      <div class="row wrap mt" style="gap:8px"><button class="btn btn-primary" id="reg-invite">${icon('chat')}Inviter une personne sur WhatsApp</button><a class="btn btn-sm" href="${esc(registrationUrl())}" target="_blank" rel="noopener">Voir la page</a></div>
+      <p class="small muted" style="margin-bottom:0">Chaque personne invitée est ajoutée à la rubrique <a href="#/prospects">Prospects</a>.</p>
       <div class="section-title mt">Dossier PDF à signer</div>
       <p class="small muted">Pour les personnes qui préfèrent remplir et signer un PDF : un lien vers la fiche complète, envoyé par WhatsApp (cotisation, virement, droit à l’image, règlement, autorisation parentale, santé), suivie des documents du club en annexe.</p>
-      <button class="btn btn-primary" id="pdf-send">${icon('chat')}Envoyer le dossier PDF par WhatsApp</button>
+      <button class="btn" id="pdf-send">${icon('chat')}Envoyer le dossier PDF par WhatsApp</button>
     </div>
     <div class="card card-pad">
       <h2>Documents et paiement</h2>
@@ -925,11 +929,171 @@ async function viewRegistration(view) {
     </div>`;
   $('#reg-copy').onclick = async () => { try { await navigator.clipboard.writeText(registrationUrl()); toast('Lien copié'); } catch { $('#reg-url').select(); toast('Sélectionnez le lien pour le copier', 'error'); } };
   $('#pdf-send').onclick = openPdfDossier;
+  $('#reg-invite').onclick = () => inviteForm();
   sb.from('registrations').select('id', { count: 'exact', head: true }).eq('status', 'nouvelle').then(({ count }) => {
     const box = $('#reg-page-banner'); if (!box) return;
     box.innerHTML = `<div class="alert info row between wrap" style="gap:8px"><span>${count ? `<strong>${count} demande${count > 1 ? 's' : ''} d’inscription en ligne</strong> à traiter.` : 'Aucune nouvelle demande d’inscription.'}</span><button class="btn btn-sm${count ? ' btn-primary' : ''}" id="reg-page-open">Voir les demandes</button></div>`;
     $('#reg-page-open').onclick = openRegistrations;
   });
+}
+
+
+/* =====================================================================
+   Prospects : personnes invitées à s'inscrire ou saisies à la main
+   ===================================================================== */
+const PROSPECT_STATUS = { a_contacter: 'À contacter', invite: 'Invité(e)', inscrit: 'Inscrit(e)', abandon: 'Sans suite' };
+const PROSPECT_SOURCE = { manuel: 'Saisi à la main', lien: 'Lien d’inscription', pdf: 'Dossier PDF' };
+const phoneKey = p => { const d = String(p || '').replace(/\D/g, ''); return d.startsWith('33') && d.length === 11 ? '0' + d.slice(2) : d; };
+const inviteText = p => `Bonjour${p?.first_name ? ' ' + p.first_name : ''},\n\npour t’inscrire au ${S.settings?.club_name || 'club'}, remplis ta fiche ici : ${registrationUrl()}\n\nÀ très vite sur le tatami !`;
+const prospectsMissing = e => /prospects|schema cache|does not exist|42P01|PGRST205/i.test(`${e?.code || ''} ${e?.message || ''}`);
+
+// Enregistre (ou met à jour, même numéro) la personne invitée. Tourne en arrière-plan : WhatsApp s'ouvre sans attendre.
+async function saveProspectInvite(p, source) {
+  const now = new Date().toISOString();
+  try {
+    const key = phoneKey(p.phone);
+    let existing = null;
+    if (key) { const { data, error } = await sb.from('prospects').select('id, phone, status'); if (error) throw error; existing = data.find(x => phoneKey(x.phone) === key); }
+    const { error } = existing
+      ? await sb.from('prospects').update({ invited_at: now, ...(existing.status === 'inscrit' ? {} : { status: 'invite' }) }).eq('id', existing.id)
+      : await sb.from('prospects').insert({ first_name: p.first_name, last_name: p.last_name || null, phone: p.phone || null, email: p.email || null, source, status: 'invite', invited_at: now });
+    if (error) throw error;
+    toast(existing ? `${p.first_name} : invitation notée dans les Prospects` : `${p.first_name} ajouté(e) aux Prospects`);
+  } catch (e) {
+    toast(prospectsMissing(e) ? 'Invitation envoyée, mais la rubrique Prospects n’est pas activée (migration-9.sql).' : 'Invitation envoyée, mais la personne n’a pas pu être ajoutée aux Prospects.', 'error');
+  }
+}
+async function markProspectRegistered(phone, memberId) {
+  const key = phoneKey(phone); if (!key) return;
+  const { data } = await sb.from('prospects').select('id, phone, status');
+  const p = (data || []).find(x => phoneKey(x.phone) === key);
+  if (p) await sb.from('prospects').update({ status: 'inscrit', member_id: memberId }).eq('id', p.id);
+}
+
+// Invitation à l'inscription en ligne : la fiche prospect est créée au moment de l'envoi
+function inviteForm(p = null) {
+  openModal({
+    title: p ? `Inviter ${esc(p.first_name)}` : 'Inviter une personne', size: 'sm',
+    body: `<form id="iv-f"><p class="small muted" style="margin-top:0">La personne reçoit sur WhatsApp le lien d’inscription en ligne et apparaît dans les Prospects.</p>
+      <div class="form-grid"><div class="field"><label for="iv-fn">Prénom *</label><input class="input" id="iv-fn" name="first_name" value="${esc(p?.first_name || '')}" autocomplete="off"></div>
+      <div class="field"><label for="iv-ln">Nom</label><input class="input" id="iv-ln" name="last_name" value="${esc(p?.last_name || '')}" autocomplete="off"></div></div>
+      <div class="field"><label for="iv-ph">Téléphone WhatsApp *</label><input class="input" id="iv-ph" name="phone" type="tel" value="${esc(p?.phone || '')}" placeholder="06 12 34 56 78" autocomplete="off"></div>
+      <div class="field"><label for="iv-msg">Message</label><textarea class="input" id="iv-msg" name="message" rows="5">${esc(inviteText(p))}</textarea></div></form>`,
+    foot: `<button class="btn" data-close>Annuler</button><a class="btn btn-primary" id="iv-send" href="#" target="_blank" rel="noopener">${icon('chat')}Envoyer sur WhatsApp</a>`,
+    onMount: root => {
+      const f = $('#iv-f', root), send = $('#iv-send', root);
+      let touched = false;
+      f.message.oninput = () => { touched = true; refresh(); };
+      const refresh = () => {
+        if (!touched) f.message.value = inviteText({ first_name: f.first_name.value.trim() });
+        send.href = waUrl(f.phone.value.trim(), f.message.value) || '#';
+      };
+      f.first_name.oninput = f.last_name.oninput = f.phone.oninput = refresh; refresh();
+      send.onclick = e => {
+        const d = { first_name: f.first_name.value.trim(), last_name: f.last_name.value.trim(), phone: f.phone.value.trim() };
+        if (!d.first_name || phoneKey(d.phone).length < 9) { e.preventDefault(); return toast('Indiquez le prénom et un numéro de téléphone.', 'error'); }
+        const done = p ? sb.from('prospects').update({ ...d, last_name: d.last_name || null, invited_at: new Date().toISOString(), ...(p.status === 'inscrit' ? {} : { status: 'invite' }) }).eq('id', p.id)
+          .then(({ error }) => { if (error) throw error; toast('Invitation notée'); }).catch(fail) : saveProspectInvite(d, 'lien');
+        setTimeout(() => { closeModal(); if (currentPath() === '/prospects') done.then(route); }, 300);
+      };
+    },
+  });
+}
+
+function prospectForm(p, onSaved) {
+  const v = p || { status: 'a_contacter', source: 'manuel' };
+  const sel = (name, opts) => `<select class="input" id="pf-${name}" name="${name}">${Object.entries(opts).map(([k, l]) => `<option value="${k}" ${v[name] === k ? 'selected' : ''}>${esc(l)}</option>`).join('')}</select>`;
+  openModal({
+    title: p ? 'Modifier le prospect' : 'Nouveau prospect',
+    body: `<form id="pf" class="form-grid">
+      <div class="field"><label for="pf-fn">Prénom *</label><input class="input" id="pf-fn" name="first_name" value="${esc(v.first_name || '')}"></div>
+      <div class="field"><label for="pf-ln">Nom</label><input class="input" id="pf-ln" name="last_name" value="${esc(v.last_name || '')}"></div>
+      <div class="field"><label for="pf-ph">Téléphone</label><input class="input" id="pf-ph" name="phone" type="tel" value="${esc(v.phone || '')}" placeholder="06 12 34 56 78"></div>
+      <div class="field"><label for="pf-em">E-mail</label><input class="input" id="pf-em" name="email" type="email" value="${esc(v.email || '')}"></div>
+      <div class="field"><label for="pf-status">Statut</label>${sel('status', PROSPECT_STATUS)}</div>
+      <div class="field"><label for="pf-source">Origine</label>${sel('source', PROSPECT_SOURCE)}</div>
+      <div class="field full"><label for="pf-notes">Notes</label><textarea class="input" id="pf-notes" name="notes" rows="3" placeholder="ex : vue au forum des associations, intéressée par le cours du jeudi">${esc(v.notes || '')}</textarea></div></form>`,
+    foot: `<button class="btn" data-close>Annuler</button><button class="btn btn-primary" id="pf-save">Enregistrer</button>`,
+    onMount: root => $('#pf-save', root).onclick = async () => {
+      const f = $('#pf', root);
+      const d = Object.fromEntries(['first_name', 'last_name', 'phone', 'email', 'status', 'source', 'notes'].map(k => [k, f[k].value.trim() || null]));
+      if (!d.first_name) return toast('Le prénom est obligatoire.', 'error');
+      const { error } = p ? await sb.from('prospects').update(d).eq('id', p.id) : await sb.from('prospects').insert(d);
+      if (error) return fail(error);
+      closeModal(); toast(p ? 'Prospect modifié' : 'Prospect ajouté'); onSaved?.();
+    },
+  });
+}
+
+S.prospectFilter = 'actifs'; S.prospectSearch = '';
+async function viewProspects(view) {
+  await loadRefs();
+  const [pr, rr] = await Promise.all([
+    sb.from('prospects').select('*').order('created_at', { ascending: false }),
+    sb.from('registrations').select('data').eq('status', 'nouvelle'),
+  ]);
+  if (pr.error) {
+    if (!prospectsMissing(pr.error)) throw pr.error;
+    view.innerHTML = head('Prospects') + `<div class="alert error">Pour activer cette rubrique, exécutez une fois le fichier <strong>migration-9.sql</strong> dans Supabase → Éditeur SQL.</div>`;
+    return;
+  }
+  const list = pr.data;
+  const pending = new Set((rr.data || []).map(r => phoneKey(r.data?.phone)).filter(Boolean));
+  const filters = [
+    { k: 'actifs', label: 'En cours', fn: p => p.status === 'a_contacter' || p.status === 'invite' },
+    { k: 'a_contacter', label: 'À contacter', fn: p => p.status === 'a_contacter' },
+    { k: 'invite', label: 'Invités', fn: p => p.status === 'invite' },
+    { k: 'inscrit', label: 'Inscrits', fn: p => p.status === 'inscrit' },
+    { k: 'abandon', label: 'Sans suite', fn: p => p.status === 'abandon' },
+    { k: 'tous', label: 'Tous', fn: () => true },
+  ];
+  view.innerHTML = head('Prospects', 'Les personnes invitées à s’inscrire et celles que vous ajoutez à la main',
+    `<button class="btn" id="pr-invite">${icon('chat')}Inviter</button><button class="btn btn-primary" id="pr-new">${icon('plus')}Nouveau prospect</button>`) + `
+    <div class="toolbar">
+      <input class="input" type="search" id="pr-search" placeholder="Rechercher un prospect…" value="${esc(S.prospectSearch)}" aria-label="Rechercher un prospect">
+      <div class="chips">${filters.map(f => `<button class="chip ${S.prospectFilter === f.k ? 'active' : ''}" data-f="${f.k}">${esc(f.label)} <span class="n">${list.filter(f.fn).length}</span></button>`).join('')}</div>
+    </div>
+    <div class="card" id="pr-list"></div>`;
+  const badge = p => `<span class="badge${p.status === 'inscrit' ? ' ok' : ''}">${esc(PROSPECT_STATUS[p.status] || p.status)}</span>`;
+  const draw = () => {
+    const norm = x => String(x || '').toLowerCase().normalize('NFD').replace(/\p{Diacritic}/gu, '');
+    const q = norm(S.prospectSearch), f = filters.find(x => x.k === S.prospectFilter) || filters[0];
+    const rows = list.filter(f.fn).filter(p => !q || norm([fullName(p), p.phone, p.email, p.notes].join(' ')).includes(q));
+    const box = $('#pr-list');
+    if (!rows.length) { box.innerHTML = `<div class="empty">${list.length ? 'Aucun prospect ne correspond.' : 'Aucun prospect pour l’instant. Invitez quelqu’un depuis l’Inscription en ligne, ou ajoutez-le avec « Nouveau prospect ».'}</div>`; return; }
+    box.innerHTML = rows.map(p => `<div class="bday" style="align-items:flex-start;flex-wrap:wrap;gap:10px;padding:12px 16px">
+      <div class="person" style="flex:1;min-width:220px"><div class="avatar">${esc(initials(p))}</div><div style="min-width:0">
+        <div class="name">${esc(fullName(p))} ${badge(p)}${pending.has(phoneKey(p.phone)) && p.status !== 'inscrit' ? ' <span class="badge ok">Demande reçue</span>' : ''}</div>
+        <div class="meta">${[p.phone, p.email].filter(Boolean).map(esc).join(' · ') || 'Pas de coordonnées'}</div>
+        <div class="meta">${esc(PROSPECT_SOURCE[p.source] || '')} · ajouté(e) le ${fmtDate(p.created_at.slice(0, 10))}${p.invited_at ? ` · invité(e) le ${fmtDate(p.invited_at.slice(0, 10))}` : ''}</div>
+        ${p.notes ? `<div class="small" style="margin-top:4px;white-space:pre-line">${esc(p.notes)}</div>` : ''}</div></div>
+      <div class="row wrap" style="gap:6px">
+        ${p.member_id ? `<a class="btn btn-sm" href="#/membres/${p.member_id}">Voir la fiche</a>` : `${p.phone ? `<button class="btn btn-sm" data-inv="${p.id}">${icon('chat')}${p.invited_at ? 'Relancer' : 'Inviter'}</button>` : ''}<button class="btn btn-sm" data-member="${p.id}">${icon('check')}Créer la fiche membre</button>`}
+        <button class="icon-btn" data-edit="${p.id}" aria-label="Modifier">${icon('edit')}</button><button class="icon-btn" data-del="${p.id}" aria-label="Supprimer">${icon('trash')}</button>
+      </div></div>`).join('');
+  };
+  draw();
+  const byId = id => list.find(p => p.id === id);
+  $('#pr-search').oninput = e => { S.prospectSearch = e.target.value; draw(); };
+  $$('[data-f]', view).forEach(b => b.onclick = () => { S.prospectFilter = b.dataset.f; $$('[data-f]', view).forEach(x => x.classList.toggle('active', x === b)); draw(); });
+  $('#pr-new').onclick = () => prospectForm(null, route);
+  $('#pr-invite').onclick = () => inviteForm();
+  $('#pr-list').onclick = async e => {
+    const t = e.target.closest('[data-inv],[data-member],[data-edit],[data-del]'); if (!t) return;
+    const p = byId(t.dataset.inv || t.dataset.member || t.dataset.edit || t.dataset.del);
+    if (t.dataset.inv) inviteForm(p);
+    else if (t.dataset.edit) prospectForm(p, route);
+    else if (t.dataset.member) memberForm(null, async id => {
+      await sb.from('prospects').update({ status: 'inscrit', member_id: id }).eq('id', p.id);
+      go('/membres/' + id);
+    }, { first_name: p.first_name, last_name: p.last_name || '', phone: p.phone || '', email: p.email || '' });
+    else if (t.dataset.del) {
+      if (!await confirmBox('Supprimer le prospect', `Supprimer ${esc(fullName(p))} des prospects ?`)) return;
+      const { error } = await sb.from('prospects').delete().eq('id', p.id);
+      if (error) return fail(error);
+      toast('Prospect supprimé'); route();
+    }
+  };
 }
 
 /* =====================================================================
@@ -1644,8 +1808,9 @@ function openPdfDossier() {
   openModal({
     title: 'Dossier PDF à signer', size: 'sm',
     body: `<form id="pd-f"><p class="small muted" style="margin-top:0">Le message WhatsApp contiendra un lien vers le dossier PDF : la personne l’ouvre d’un simple toucher, le remplit, le signe et vous le renvoie.</p>
-      <div class="field"><label for="pd-fn">Prénom</label><input class="input" id="pd-fn" name="prenom" autocomplete="off"></div>
-      <div class="field"><label for="pd-ph">Téléphone WhatsApp</label><input class="input" id="pd-ph" name="tel" type="tel" autocomplete="off" placeholder="06 12 34 56 78"><span class="help">Laissez vide pour choisir la personne ou le groupe dans WhatsApp.</span></div>
+      <div class="form-grid"><div class="field"><label for="pd-fn">Prénom</label><input class="input" id="pd-fn" name="prenom" autocomplete="off"></div>
+      <div class="field"><label for="pd-ln">Nom</label><input class="input" id="pd-ln" name="nom" autocomplete="off"></div></div>
+      <div class="field"><label for="pd-ph">Téléphone WhatsApp</label><input class="input" id="pd-ph" name="tel" type="tel" autocomplete="off" placeholder="06 12 34 56 78"><span class="help">Laissez vide pour choisir la personne ou le groupe dans WhatsApp. Avec un prénom, la personne est ajoutée aux Prospects.</span></div>
       <div id="pd-msg"></div></form>`,
     foot: `<button class="btn" data-close>Fermer</button><button class="btn btn-primary" id="pd-make">${icon('file')}Préparer le dossier</button><a class="btn btn-primary" id="pd-wa" href="#" target="_blank" rel="noopener" hidden>${icon('chat')}Envoyer sur WhatsApp</a>`,
     onMount: root => {
@@ -1654,6 +1819,7 @@ function openPdfDossier() {
       const text = () => { const p = form.prenom.value.trim(); return `Bonjour${p ? ' ' + p : ''},\n\nvoici ton dossier d’inscription au ${S.settings?.club_name || 'club'}${activeSeason() ? ' pour la saison ' + activeSeason().label : ''}. Touche le lien pour l’ouvrir :\n\n${pdfUrl}\n\n1. Ouvre le PDF, remplis-le et signe-le (sur ton téléphone ou imprimé).\n2. Joins ton certificat médical ou signe l’attestation de santé (page 3).\n3. Règle la cotisation : virement (coordonnées page 2), chèque ou espèces.\n\nRenvoie-nous le tout ici ou apporte-le au prochain cours. À très vite sur le tatami !`; };
       const refreshLink = () => { if (pdfUrl) wa.href = waUrl(form.tel.value.trim() || null, text()) || waUrl(null, text()); };
       form.oninput = refreshLink;
+      wa.addEventListener('click', () => { const fn = form.prenom.value.trim(); if (fn) saveProspectInvite({ first_name: fn, last_name: form.nom.value.trim(), phone: form.tel.value.trim() }, 'pdf'); });
       make.onclick = async () => {
         make.disabled = true; make.textContent = 'Préparation…'; msg.innerHTML = '';
         if (!isAdmin()) { // les enseignants ne peuvent pas mettre de fichier en ligne : ils envoient le dernier dossier préparé par le bureau
@@ -1880,6 +2046,7 @@ async function openRegistrations() {
         const { data: created, error } = await sb.from('members').insert(member).select('id').single();
         if (error) { b.disabled = false; return fail(error); }
         await sb.from('registrations').delete().eq('id', r.id); // la fiche membre remplace la demande
+        await markProspectRegistered(d.phone, created.id);
         closeModal(); toast(`Fiche ${/^[aeiouyhàâäéèêëîïôöùûü]/i.test(d.first_name || '') ? 'd’' : 'de '}${d.first_name} créée`); go('/membres/' + created.id);
       });
       $$('[data-refuse]', root).forEach(b => b.onclick = async () => {
@@ -2105,6 +2272,8 @@ async function downloadBackup(btn) {
       'Historique grades': clean(history.map(h => ({ membre: nameOf(h.member_id), ...h }))),
       'Lien séances-programme': clean(links),
     };
+    const { data: prospects } = await sb.from('prospects').select('*').order('created_at'); // absent tant que migration-9.sql n'est pas exécuté
+    if (prospects) sheets['Prospects'] = clean(prospects);
     const wb = XLSX.utils.book_new();
     for (const [name, rows] of Object.entries(sheets)) {
       const ws = XLSX.utils.json_to_sheet(rows.length ? rows : [{ info: 'Aucune donnée' }]);

@@ -43,6 +43,7 @@ const DEFAULTS = {
   levels: () => ({ is_active: true }),
   level_history: () => ({ changed_on: today() }),
   registrations: () => ({ status: 'nouvelle' }),
+  prospects: () => ({ source: 'manuel', status: 'a_contacter' }),
 };
 const NO_ID = new Set(['attendances', 'course_plan_items', 'club_settings']);
 

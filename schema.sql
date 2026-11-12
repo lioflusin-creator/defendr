@@ -485,3 +485,23 @@ create or replace function public.public_club_info() returns json language sql s
 $$;
 revoke all on function public.public_club_info() from public;
 grant execute on function public.public_club_info() to anon, authenticated;
+
+-- =====================================================================
+-- DEFENDR — rubrique « Prospects » (voir migration-9.sql)
+-- =====================================================================
+create table if not exists public.prospects (
+  id uuid primary key default gen_random_uuid(),
+  first_name text not null,
+  last_name text,
+  phone text,
+  email text,
+  source text not null default 'manuel' check (source in ('manuel', 'lien', 'pdf')),
+  status text not null default 'a_contacter' check (status in ('a_contacter', 'invite', 'inscrit', 'abandon')),
+  invited_at timestamptz,
+  notes text,
+  member_id uuid references public.members(id) on delete set null,
+  created_at timestamptz not null default now()
+);
+alter table public.prospects enable row level security;
+drop policy if exists "staff all" on public.prospects;
+create policy "staff all" on public.prospects for all using (public.is_staff()) with check (public.is_staff());
