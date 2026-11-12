@@ -164,7 +164,7 @@ function confirmBox(title, text, okLabel = 'Supprimer') {
 const NAV = [
   { path: '/', label: 'Tableau de bord', short: 'Accueil', icon: 'home' },
   { path: '/membres', label: 'Membres', short: 'Membres', icon: 'users' },
-  { path: '/inscription', label: 'Inscription en ligne', icon: 'userplus', admin: true },
+  { path: '/inscription', label: 'Inscription en ligne', icon: 'userplus' },
   { path: '/planning', label: 'Planning', short: 'Planning', icon: 'calendar' },
   { path: '/planification', label: 'Planification annuelle', icon: 'list' },
   { path: '/guide', label: 'Guide enseignant', icon: 'book' },
@@ -341,7 +341,7 @@ async function route() {
     else if (path === '/whatsapp') await viewWhatsApp(view);
     else if (path === '/disciplines') await viewDisciplines(view);
     else if (path === '/niveaux') await viewLevels(view);
-    else if (path === '/inscription' && isAdmin()) await viewRegistration(view);
+    else if (path === '/inscription') await viewRegistration(view);
     else if (path === '/parametres') await viewSettings(view);
     else if (item?.admin && !isAdmin()) view.innerHTML = `<div class="empty">Cette rubrique est réservée au président et au trésorier.</div>`;
     else if (item) viewSoon(view, item);
@@ -920,7 +920,7 @@ async function viewRegistration(view) {
     </div>
     <div class="card card-pad">
       <h2>Documents et paiement</h2>
-      <p class="small muted">Le règlement, les questionnaires de santé, le RIB et les coordonnées bancaires proposés sur la page d’inscription et joints au dossier PDF se gèrent dans les <a href="#/parametres">Paramètres</a>.</p>
+      <p class="small muted">Le règlement, les questionnaires de santé, le RIB et les coordonnées bancaires proposés sur la page d’inscription et joints au dossier PDF se gèrent ${isAdmin() ? 'dans les <a href="#/parametres">Paramètres</a>' : 'par le président ou le trésorier, dans les Paramètres'}.</p>
     </div>
     </div>`;
   $('#reg-copy').onclick = async () => { try { await navigator.clipboard.writeText(registrationUrl()); toast('Lien copié'); } catch { $('#reg-url').select(); toast('Sélectionnez le lien pour le copier', 'error'); } };
@@ -1656,6 +1656,17 @@ function openPdfDossier() {
       form.oninput = refreshLink;
       make.onclick = async () => {
         make.disabled = true; make.textContent = 'Préparation…'; msg.innerHTML = '';
+        if (!isAdmin()) { // les enseignants ne peuvent pas mettre de fichier en ligne : ils envoient le dernier dossier préparé par le bureau
+          const last = S.settings?.club_documents?.dossier;
+          if (last?.path) {
+            pdfUrl = docUrl(last); refreshLink(); make.hidden = true; wa.hidden = false;
+            msg.innerHTML = `<div class="alert info" style="margin:0">Dossier prêt (dernière version préparée par le bureau le ${fmtDate(last.updated_at)}). Touchez <strong>Envoyer sur WhatsApp</strong> : le message part avec le lien du PDF.<div class="mt"><a href="${esc(pdfUrl)}" target="_blank" rel="noopener">Voir le PDF</a></div></div>`;
+          } else {
+            make.disabled = false; make.innerHTML = `${icon('file')}Préparer le dossier`;
+            msg.innerHTML = '<div class="alert error" style="margin:0">Le dossier PDF n’a pas encore été préparé. Demandez au président ou au trésorier de l’envoyer une première fois depuis cette page : vous pourrez ensuite l’envoyer vous aussi.</div>';
+          }
+          return;
+        }
         try {
           const { bytes, problems } = await buildDossierPdf({ prenom: '', nom: '', tel: '' });
           pdfFile = new File([bytes], `dossier-inscription-${slug(S.settings?.club_name).replace(/_/g, '-').toLowerCase() || 'club'}.pdf`, { type: 'application/pdf' }); // pas de « _ » : WhatsApp le prendrait pour de l'italique et casserait le lien
