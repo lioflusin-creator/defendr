@@ -174,6 +174,7 @@ const NAV = [
   { path: '/niveaux', label: 'Niveaux', icon: 'layers' },
   { path: '/statistiques', label: 'Statistiques', short: 'Stats', icon: 'chart' },
   { path: '/whatsapp', label: 'WhatsApp', icon: 'chat' },
+  { path: '/historique', label: 'Historique', icon: 'clock', admin: true },
   { path: '/parametres', label: 'Paramètres', icon: 'gear' },
   { path: '/prospects', label: 'Prospects', icon: 'star' },
 ];
@@ -332,12 +333,12 @@ async function route() {
   const view = $('#view');
   try {
     if (path === '/') await viewDashboard(view);
-    else if (path.startsWith('/membres/')) await viewMember(view, path.split('/')[2]);
+    else if (path.startsWith('/membres/')) { await viewMember(view, path.split('/')[2]); if (isAdmin()) memberHistory(view, path.split('/')[2]); }
     else if (path === '/membres') await viewMembers(view);
     else if (path === '/planning') await viewPlanning(view);
     else if (path === '/paiements' && isAdmin()) await viewAccounting(view);
     else if (path === '/bilan' && isAdmin()) await viewBilan(view);
-    else if (path === '/statistiques') await viewStats(view);
+    else if (path === '/statistiques') { await viewStats(view); registrationStats($('#st-regs')); }
     else if (path === '/planification') await viewPlan(view);
     else if (path === '/guide') await viewGuide(view);
     else if (path === '/whatsapp') await viewWhatsApp(view);
@@ -345,6 +346,7 @@ async function route() {
     else if (path === '/niveaux') await viewLevels(view);
     else if (path === '/inscription') await viewRegistration(view);
     else if (path === '/prospects') await viewProspects(view);
+    else if (path === '/historique' && isAdmin()) await viewHistory(view);
     else if (path === '/parametres') await viewSettings(view);
     else if (item?.admin && !isAdmin()) view.innerHTML = `<div class="empty">Cette rubrique est réservée au président et au trésorier.</div>`;
     else if (item) viewSoon(view, item);
@@ -457,7 +459,7 @@ async function viewDashboard(view) {
   }
 
   view.innerHTML = head('Tableau de bord', `Vue d'ensemble de votre club${season ? ' · saison ' + esc(season.label) : ''}`) + `
-    <div id="dash-regs"></div>
+    <div id="dash-regs"></div><div id="dash-prospects"></div>
     ${isAdmin() && (!lastBackup() || Date.now() - new Date(lastBackup()) > 31 * 86400000) ? `<div class="alert info">Pensez à télécharger une sauvegarde de vos données : <a href="#/parametres">Paramètres → Sauvegarde</a>.</div>` : ''}
     ${!season && isAdmin() ? `<div class="alert info">Aucune saison active. <a href="#/parametres">Créez la saison en cours dans les Paramètres</a> pour suivre la comptabilité par saison.</div>` : ''}
     <div class="grid stats mb">
@@ -488,6 +490,7 @@ async function viewDashboard(view) {
     if (count && $('#dash-regs')) $('#dash-regs').innerHTML = `<div class="alert info row between wrap" style="gap:8px"><span><strong>${count} nouvelle${count > 1 ? 's' : ''} demande${count > 1 ? 's' : ''} d’inscription</strong> en ligne.</span><button class="btn btn-sm btn-primary" id="dash-open-regs">Voir</button></div>`;
     $('#dash-open-regs') && ($('#dash-open-regs').onclick = openRegistrations);
   });
+  dashProspects();
   $$('[data-deposit]', view).forEach(b => b.onclick = async () => {
     b.disabled = true;
     const { error } = await sb.from('payments').update({ bank_checked: true }).eq('id', b.dataset.deposit);
@@ -922,6 +925,7 @@ async function viewRegistration(view) {
       <p class="small muted">Pour les personnes qui préfèrent remplir et signer un PDF : un lien vers la fiche complète, envoyé par WhatsApp (cotisation, virement, droit à l’image, règlement, autorisation parentale, santé), suivie des documents du club en annexe.</p>
       <button class="btn" id="pdf-send">${icon('chat')}Envoyer le dossier PDF par WhatsApp</button>
     </div>
+    <div class="card card-pad" id="renew-card"><h2>Réinscription ${activeSeason() ? esc(activeSeason().label) : ''}</h2><div class="small muted">Chargement…</div></div>
     <div class="card card-pad">
       <h2>Documents et paiement</h2>
       <p class="small muted">Le règlement, les questionnaires de santé, le RIB et les coordonnées bancaires proposés sur la page d’inscription et joints au dossier PDF se gèrent ${isAdmin() ? 'dans les <a href="#/parametres">Paramètres</a>' : 'par le président ou le trésorier, dans les Paramètres'}.</p>
@@ -930,6 +934,7 @@ async function viewRegistration(view) {
   $('#reg-copy').onclick = async () => { try { await navigator.clipboard.writeText(registrationUrl()); toast('Lien copié'); } catch { $('#reg-url').select(); toast('Sélectionnez le lien pour le copier', 'error'); } };
   $('#pdf-send').onclick = openPdfDossier;
   $('#reg-invite').onclick = () => inviteForm();
+  renewalCard($('#renew-card'));
   sb.from('registrations').select('id', { count: 'exact', head: true }).eq('status', 'nouvelle').then(({ count }) => {
     const box = $('#reg-page-banner'); if (!box) return;
     box.innerHTML = `<div class="alert info row between wrap" style="gap:8px"><span>${count ? `<strong>${count} demande${count > 1 ? 's' : ''} d’inscription en ligne</strong> à traiter.` : 'Aucune nouvelle demande d’inscription.'}</span><button class="btn btn-sm${count ? ' btn-primary' : ''}" id="reg-page-open">Voir les demandes</button></div>`;
@@ -941,10 +946,18 @@ async function viewRegistration(view) {
 /* =====================================================================
    Prospects : personnes invitées à s'inscrire ou saisies à la main
    ===================================================================== */
-const PROSPECT_STATUS = { a_contacter: 'À contacter', invite: 'Invité(e)', inscrit: 'Inscrit(e)', abandon: 'Sans suite' };
+const PROSPECT_STATUS = { a_contacter: 'À contacter', invite: 'Invité(e)', essai: 'Cours d’essai', inscrit: 'Inscrit(e)', abandon: 'Sans suite' };
+const FOLLOW_UP_DAYS = 7; // délai avant de proposer une relance
+const daysSince = d => d ? Math.floor((Date.now() - new Date(d)) / 86400000) : null;
+// À relancer : invité(e) il y a plus d'une semaine, ou venu(e) à l'essai sans s'inscrire depuis
+const needsFollowUp = p => (p.status === 'invite' && daysSince(p.invited_at) >= FOLLOW_UP_DAYS) || (p.status === 'essai' && p.trial_date && p.trial_date < isoDay(addDays(new Date(), -1)));
+const trialRow = p => `<label class="att-row ${p.trial_present ? 'on' : ''}" data-p="${p.id}"><input type="checkbox" ${p.trial_present ? 'checked' : ''} aria-label="${esc(fullName(p))} venu(e) à l’essai">
+  <span class="avatar">${esc(initials(p))}</span><span class="grow"><span class="att-name">${esc(fullName(p))}</span><span class="small muted">Cours d’essai</span></span><span class="att-state">${p.trial_present ? 'Venu(e)' : 'Attendu(e)'}</span></label>`;
 const PROSPECT_SOURCE = { manuel: 'Saisi à la main', lien: 'Lien d’inscription', pdf: 'Dossier PDF' };
 const phoneKey = p => { const d = String(p || '').replace(/\D/g, ''); return d.startsWith('33') && d.length === 11 ? '0' + d.slice(2) : d; };
-const inviteText = p => `Bonjour${p?.first_name ? ' ' + p.first_name : ''},\n\npour t’inscrire au ${S.settings?.club_name || 'club'}, remplis ta fiche ici : ${registrationUrl()}\n\nÀ très vite sur le tatami !`;
+const inviteText = p => p?.status === 'essai' && p.trial_present
+  ? `Bonjour ${p.first_name},\n\nmerci d’être venu(e) au cours d’essai du ${S.settings?.club_name || 'club'} ! Si tu veux continuer avec nous, remplis ta fiche d’inscription ici : ${registrationUrl()}\n\nÀ très vite sur le tatami !`
+  : `Bonjour${p?.first_name ? ' ' + p.first_name : ''},\n\npour t’inscrire au ${S.settings?.club_name || 'club'}, remplis ta fiche ici : ${registrationUrl()}\n\nÀ très vite sur le tatami !`;
 const prospectsMissing = e => /prospects|schema cache|does not exist|42P01|PGRST205/i.test(`${e?.code || ''} ${e?.message || ''}`);
 
 // Enregistre (ou met à jour, même numéro) la personne invitée. Tourne en arrière-plan : WhatsApp s'ouvre sans attendre.
@@ -965,9 +978,59 @@ async function saveProspectInvite(p, source) {
 }
 async function markProspectRegistered(phone, memberId) {
   const key = phoneKey(phone); if (!key) return;
-  const { data } = await sb.from('prospects').select('id, phone, status');
-  const p = (data || []).find(x => phoneKey(x.phone) === key);
-  if (p) await sb.from('prospects').update({ status: 'inscrit', member_id: memberId }).eq('id', p.id);
+  const { data } = await sb.from('prospects').select('*');
+  const p = (data || []).find(x => phoneKey(x.phone) === key && !x.member_id);
+  if (p) await linkProspectToMember(p, memberId);
+}
+// Le prospect devient membre : statut, date, et sa présence au cours d'essai passe sur sa fiche
+async function linkProspectToMember(p, memberId) {
+  const { error } = await sb.from('prospects').update({ status: 'inscrit', member_id: memberId, converted_at: new Date().toISOString() }).eq('id', p.id);
+  if (error) await sb.from('prospects').update({ status: 'inscrit', member_id: memberId }).eq('id', p.id); // avant migration-10.sql
+  if (p.trial_present && p.trial_course_id) await sb.from('attendances').upsert({ course_id: p.trial_course_id, member_id: memberId, present: true }, { onConflict: 'course_id,member_id' });
+}
+
+// Encadré du tableau de bord : prospects à relancer et cours d'essai du jour
+async function dashProspects() {
+  const { data, error } = await sb.from('prospects').select('id, first_name, last_name, status, invited_at, trial_date');
+  const box = $('#dash-prospects'); if (error || !box) return;
+  const todo = data.filter(needsFollowUp), today = isoDay(new Date());
+  const trials = data.filter(p => p.status === 'essai' && p.trial_date === today);
+  box.innerHTML = [
+    todo.length && `<div class="alert info row between wrap" style="gap:8px"><span><strong>${todo.length} prospect${todo.length > 1 ? 's' : ''} à relancer</strong> : invité${todo.length > 1 ? 's' : ''} depuis plus de ${FOLLOW_UP_DAYS} jours ou venu${todo.length > 1 ? 's' : ''} à l’essai sans inscription (${esc(todo.slice(0, 3).map(fullName).join(', '))}${todo.length > 3 ? '…' : ''}).</span><button class="btn btn-sm btn-primary" id="dash-relance">Voir</button></div>`,
+    trials.length && `<div class="alert info row between wrap" style="gap:8px"><span><strong>Cours d’essai aujourd’hui</strong> : ${esc(trials.map(fullName).join(', '))}. Cochez leur présence dans l’appel.</span></div>`,
+  ].filter(Boolean).join('');
+  $('#dash-relance') && ($('#dash-relance').onclick = () => { S.prospectFilter = 'relancer'; go('/prospects'); });
+}
+
+// Planifier un cours d'essai, puis prévenir la personne
+async function trialForm(p) {
+  const { data: next } = await sb.from('courses').select('id, title, course_date, start_time, room').gte('course_date', isoDay(new Date())).order('course_date').order('start_time').limit(12);
+  const label = c => `${parseDay(c.course_date).toLocaleDateString('fr-FR', { weekday: 'short', day: 'numeric', month: 'short' })}${c.start_time ? ' · ' + hhmm(c.start_time) : ''} · ${c.title}`;
+  openModal({
+    title: `Cours d’essai de ${esc(p.first_name)}`, size: 'sm',
+    body: `<form id="tf">
+      ${(next || []).length ? `<div class="field"><label for="tf-c">Séance</label><select class="input" id="tf-c" name="course"><option value="">Autre date…</option>${next.map(c => `<option value="${c.id}" ${p.trial_course_id === c.id ? 'selected' : ''}>${esc(label(c))}</option>`).join('')}</select></div>` : ''}
+      <div class="field" id="tf-d-f"><label for="tf-d">Date</label><input class="input" id="tf-d" name="date" type="date" value="${esc(p.trial_date || '')}"></div>
+      <div id="tf-msg"></div></form>`,
+    foot: `<button class="btn" data-close>Fermer</button><button class="btn btn-primary" id="tf-save">Enregistrer</button><a class="btn btn-primary" id="tf-wa" href="#" target="_blank" rel="noopener" hidden>${icon('chat')}Prévenir sur WhatsApp</a>`,
+    onMount: root => {
+      const f = $('#tf', root), sel = f.course;
+      const sync = () => { $('#tf-d-f', root).hidden = !!sel?.value; };
+      if (sel) { if (!sel.value && !p.trial_date && next.length) sel.value = next[0].id; sel.onchange = sync; sync(); }
+      $('#tf-save', root).onclick = async () => {
+        const c = sel?.value ? next.find(x => x.id === sel.value) : null, date = c ? c.course_date : f.date.value;
+        if (!date) return toast('Choisissez une séance ou une date.', 'error');
+        const { error } = await sb.from('prospects').update({ trial_date: date, trial_course_id: c?.id || null, trial_present: false, ...(p.status === 'inscrit' ? {} : { status: 'essai' }) }).eq('id', p.id);
+        if (error) return fail(error);
+        toast('Cours d’essai enregistré');
+        const when = `${longDay(date)}${c?.start_time ? ' à ' + hhmm(c.start_time).replace(':', 'h') : ''}${c?.room ? ' (' + c.room + ')' : ''}`;
+        const text = `Bonjour ${p.first_name},\n\nje te confirme ton cours d’essai au ${S.settings?.club_name || 'club'} le ${when}. Prévois une tenue de sport confortable et une bouteille d’eau.\n\nÀ très vite sur le tatami !`;
+        const wa = $('#tf-wa', root);
+        if (p.phone && waLink(p.phone)) { wa.href = waUrl(p.phone, text); wa.hidden = false; $('#tf-save', root).hidden = true; wa.onclick = () => setTimeout(() => { closeModal(); route(); }, 300); $('#tf-msg', root).innerHTML = '<div class="alert info" style="margin:0">Cours d’essai enregistré. Vous pouvez prévenir la personne.</div>'; }
+        else { closeModal(); route(); }
+      };
+    },
+  });
 }
 
 // Invitation à l'inscription en ligne : la fiche prospect est créée au moment de l'envoi
@@ -985,14 +1048,14 @@ function inviteForm(p = null) {
       let touched = false;
       f.message.oninput = () => { touched = true; refresh(); };
       const refresh = () => {
-        if (!touched) f.message.value = inviteText({ first_name: f.first_name.value.trim() });
+        if (!touched) f.message.value = inviteText({ ...(p || {}), first_name: f.first_name.value.trim() });
         send.href = waUrl(f.phone.value.trim(), f.message.value) || '#';
       };
       f.first_name.oninput = f.last_name.oninput = f.phone.oninput = refresh; refresh();
       send.onclick = e => {
         const d = { first_name: f.first_name.value.trim(), last_name: f.last_name.value.trim(), phone: f.phone.value.trim() };
         if (!d.first_name || phoneKey(d.phone).length < 9) { e.preventDefault(); return toast('Indiquez le prénom et un numéro de téléphone.', 'error'); }
-        const done = p ? sb.from('prospects').update({ ...d, last_name: d.last_name || null, invited_at: new Date().toISOString(), ...(p.status === 'inscrit' ? {} : { status: 'invite' }) }).eq('id', p.id)
+        const done = p ? sb.from('prospects').update({ ...d, last_name: d.last_name || null, invited_at: new Date().toISOString(), ...(['inscrit', 'essai'].includes(p.status) ? {} : { status: 'invite' }) }).eq('id', p.id)
           .then(({ error }) => { if (error) throw error; toast('Invitation notée'); }).catch(fail) : saveProspectInvite(d, 'lien');
         setTimeout(() => { closeModal(); if (currentPath() === '/prospects') done.then(route); }, 300);
       };
@@ -1040,9 +1103,11 @@ async function viewProspects(view) {
   const list = pr.data;
   const pending = new Set((rr.data || []).map(r => phoneKey(r.data?.phone)).filter(Boolean));
   const filters = [
-    { k: 'actifs', label: 'En cours', fn: p => p.status === 'a_contacter' || p.status === 'invite' },
+    { k: 'actifs', label: 'En cours', fn: p => ['a_contacter', 'invite', 'essai'].includes(p.status) },
+    { k: 'relancer', label: 'À relancer', fn: needsFollowUp },
     { k: 'a_contacter', label: 'À contacter', fn: p => p.status === 'a_contacter' },
     { k: 'invite', label: 'Invités', fn: p => p.status === 'invite' },
+    { k: 'essai', label: 'Cours d’essai', fn: p => p.status === 'essai' },
     { k: 'inscrit', label: 'Inscrits', fn: p => p.status === 'inscrit' },
     { k: 'abandon', label: 'Sans suite', fn: p => p.status === 'abandon' },
     { k: 'tous', label: 'Tous', fn: () => true },
@@ -1054,7 +1119,8 @@ async function viewProspects(view) {
       <div class="chips">${filters.map(f => `<button class="chip ${S.prospectFilter === f.k ? 'active' : ''}" data-f="${f.k}">${esc(f.label)} <span class="n">${list.filter(f.fn).length}</span></button>`).join('')}</div>
     </div>
     <div class="card" id="pr-list"></div>`;
-  const badge = p => `<span class="badge${p.status === 'inscrit' ? ' ok' : ''}">${esc(PROSPECT_STATUS[p.status] || p.status)}</span>`;
+  const badge = p => `<span class="badge${p.status === 'inscrit' ? ' ok' : ''}">${esc(PROSPECT_STATUS[p.status] || p.status)}</span>${needsFollowUp(p) ? ' <span class="badge warn">À relancer</span>' : ''}`;
+  const trialInfo = p => p.trial_date ? ` · essai le ${fmtDate(p.trial_date)}${p.trial_date <= isoDay(new Date()) ? (p.trial_present ? ' (venu·e)' : ' (pas venu·e)') : ''}` : '';
   const draw = () => {
     const norm = x => String(x || '').toLowerCase().normalize('NFD').replace(/\p{Diacritic}/gu, '');
     const q = norm(S.prospectSearch), f = filters.find(x => x.k === S.prospectFilter) || filters[0];
@@ -1065,10 +1131,10 @@ async function viewProspects(view) {
       <div class="person" style="flex:1;min-width:220px"><div class="avatar">${esc(initials(p))}</div><div style="min-width:0">
         <div class="name">${esc(fullName(p))} ${badge(p)}${pending.has(phoneKey(p.phone)) && p.status !== 'inscrit' ? ' <span class="badge ok">Demande reçue</span>' : ''}</div>
         <div class="meta">${[p.phone, p.email].filter(Boolean).map(esc).join(' · ') || 'Pas de coordonnées'}</div>
-        <div class="meta">${esc(PROSPECT_SOURCE[p.source] || '')} · ajouté(e) le ${fmtDate(p.created_at.slice(0, 10))}${p.invited_at ? ` · invité(e) le ${fmtDate(p.invited_at.slice(0, 10))}` : ''}</div>
+        <div class="meta">${esc(PROSPECT_SOURCE[p.source] || '')} · ajouté(e) le ${fmtDate(p.created_at.slice(0, 10))}${p.invited_at ? ` · invité(e) le ${fmtDate(p.invited_at.slice(0, 10))}` : ''}${trialInfo(p)}</div>
         ${p.notes ? `<div class="small" style="margin-top:4px;white-space:pre-line">${esc(p.notes)}</div>` : ''}</div></div>
       <div class="row wrap" style="gap:6px">
-        ${p.member_id ? `<a class="btn btn-sm" href="#/membres/${p.member_id}">Voir la fiche</a>` : `${p.phone ? `<button class="btn btn-sm" data-inv="${p.id}">${icon('chat')}${p.invited_at ? 'Relancer' : 'Inviter'}</button>` : ''}<button class="btn btn-sm" data-member="${p.id}">${icon('check')}Créer la fiche membre</button>`}
+        ${p.member_id ? `<a class="btn btn-sm" href="#/membres/${p.member_id}">Voir la fiche</a>` : `${p.phone ? `<button class="btn btn-sm" data-inv="${p.id}">${icon('chat')}${p.invited_at || p.status === 'essai' ? 'Relancer' : 'Inviter'}</button>` : ''}<button class="btn btn-sm" data-trial="${p.id}">${icon('calendar')}Essai</button><button class="btn btn-sm" data-member="${p.id}">${icon('check')}Créer la fiche membre</button>`}
         <button class="icon-btn" data-edit="${p.id}" aria-label="Modifier">${icon('edit')}</button><button class="icon-btn" data-del="${p.id}" aria-label="Supprimer">${icon('trash')}</button>
       </div></div>`).join('');
   };
@@ -1079,12 +1145,13 @@ async function viewProspects(view) {
   $('#pr-new').onclick = () => prospectForm(null, route);
   $('#pr-invite').onclick = () => inviteForm();
   $('#pr-list').onclick = async e => {
-    const t = e.target.closest('[data-inv],[data-member],[data-edit],[data-del]'); if (!t) return;
-    const p = byId(t.dataset.inv || t.dataset.member || t.dataset.edit || t.dataset.del);
+    const t = e.target.closest('[data-inv],[data-trial],[data-member],[data-edit],[data-del]'); if (!t) return;
+    const p = byId(t.dataset.inv || t.dataset.trial || t.dataset.member || t.dataset.edit || t.dataset.del);
     if (t.dataset.inv) inviteForm(p);
+    else if (t.dataset.trial) trialForm(p);
     else if (t.dataset.edit) prospectForm(p, route);
     else if (t.dataset.member) memberForm(null, async id => {
-      await sb.from('prospects').update({ status: 'inscrit', member_id: id }).eq('id', p.id);
+      await linkProspectToMember(p, id);
       go('/membres/' + id);
     }, { first_name: p.first_name, last_name: p.last_name || '', phone: p.phone || '', email: p.email || '' });
     else if (t.dataset.del) {
@@ -1094,6 +1161,149 @@ async function viewProspects(view) {
       toast('Prospect supprimé'); route();
     }
   };
+}
+
+
+/* =====================================================================
+   Réinscription de saison : lien personnel, fiche déjà remplie
+   ===================================================================== */
+// Début de saison : 1er août de la première année du libellé (« 2026/2027 »), sinon date de création
+const seasonStart = se => { const y = String(se?.label || '').match(/(\d{4})/)?.[1]; return y ? `${y}-08-01` : se?.created_at?.slice(0, 10) || '1900-01-01'; };
+const renewalUrl = m => `${registrationUrl()}?r=${m.renewal_token}`;
+const renewalPhone = m => (ageOf(m.birth_date) ?? 99) < 18 && m.guardian_phone ? m.guardian_phone : m.phone;
+const renewalText = m => { const se = activeSeason(), minor = (ageOf(m.birth_date) ?? 99) < 18 && m.guardian_phone;
+  return `Bonjour ${minor && m.guardian_name ? m.guardian_name.split(' ')[0] : m.first_name},\n\nla saison ${se?.label || ''} du ${S.settings?.club_name || 'club'} commence ! Pour ${minor ? 'réinscrire ' + m.first_name : 'te réinscrire'}, la fiche est déjà remplie : il suffit de la vérifier, d’ajouter le certificat médical ou le questionnaire de santé, et de l’envoyer.\n\n${renewalUrl(m)}\n\nÀ très vite sur le tatami !`; };
+
+async function renewalCard(box) {
+  if (!box) return;
+  const se = activeSeason();
+  const title = `<h2>Réinscription${se ? ' ' + esc(se.label) : ''}</h2>`;
+  if (!se) { box.innerHTML = title + `<p class="small muted">Aucune saison active. ${isAdmin() ? '<a href="#/parametres">Créez la nouvelle saison dans les Paramètres</a>' : 'Le président ou le trésorier doit créer la nouvelle saison'} pour lancer les réinscriptions.</p>`; return; }
+  const { data, error } = await sb.from('members').select('id, first_name, last_name, phone, birth_date, guardian_name, guardian_phone, status, registration_date, renewal_token, renewal_sent_at, renewed_season_id').eq('status', 'actif').order('last_name');
+  if (error) { box.innerHTML = title + '<div class="small muted">Impossible de charger les membres.</div>'; return; }
+  if (data.length && !('renewal_token' in data[0])) { box.innerHTML = title + '<div class="alert error">Pour activer la réinscription, exécutez une fois le fichier <strong>migration-10.sql</strong> dans Supabase → Éditeur SQL.</div>'; return; }
+  const start = seasonStart(se);
+  const concerned = data.filter(m => (m.registration_date || '1900-01-01') < start);
+  const done = concerned.filter(m => m.renewed_season_id === se.id), todo = concerned.filter(m => m.renewed_season_id !== se.id);
+  const unsent = todo.filter(m => !m.renewal_sent_at && waLink(renewalPhone(m)));
+  box.innerHTML = title + `
+    <p class="small muted">Chaque membre de la saison passée reçoit un lien personnel : sa fiche est déjà remplie, il la vérifie, joint son justificatif de santé et l’envoie. La demande arrive dans les inscriptions en ligne et met à jour sa fiche existante.</p>
+    <div class="row wrap" style="gap:8px;align-items:center"><span class="badge ok">${done.length} réinscrit${done.length > 1 ? 's' : ''}</span><span class="badge">${todo.length} à réinscrire</span>
+      ${unsent.length ? `<a class="btn btn-primary btn-sm" id="rn-next" href="${esc(waUrl(renewalPhone(unsent[0]), renewalText(unsent[0])))}" target="_blank" rel="noopener" data-m="${unsent[0].id}">${icon('chat')}Envoyer au suivant : ${esc(fullName(unsent[0]))} (${unsent.length})</a>` : ''}</div>
+    ${todo.length ? `<div class="mt" id="rn-list">${todo.map(m => `<div class="bday" data-row="${m.id}"><div style="flex:1;min-width:0"><div style="font-weight:600">${esc(fullName(m))}</div>
+      <div class="small muted">${m.renewal_sent_at ? `Lien envoyé le ${fmtDate(m.renewal_sent_at.slice(0, 10))}` : waLink(renewalPhone(m)) ? 'Pas encore envoyé' : 'Pas de téléphone : copiez le lien'}</div></div>
+      ${waLink(renewalPhone(m)) ? `<a class="btn btn-sm" href="${esc(waUrl(renewalPhone(m), renewalText(m)))}" target="_blank" rel="noopener" data-send="${m.id}">${icon('chat')}${m.renewal_sent_at ? 'Relancer' : 'Envoyer'}</a>` : ''}
+      <button class="icon-btn" data-copy="${m.id}" aria-label="Copier le lien de ${esc(fullName(m))}" title="Copier le lien">${icon('copy')}</button>
+      <button class="btn btn-sm" data-done="${m.id}" title="Réinscrit sur papier ou en main propre">${icon('check')}Réinscrit</button></div>`).join('')}</div>` : `<p class="small mt">${concerned.length ? 'Tous les membres de la saison passée sont réinscrits. 🎉' : 'Aucun membre inscrit avant cette saison.'}</p>`}`;
+  const byId = id => data.find(m => m.id === id);
+  const sent = id => sb.from('members').update({ renewal_sent_at: new Date().toISOString() }).eq('id', id).then(() => setTimeout(() => renewalCard(box), 400));
+  $('#rn-next', box) && ($('#rn-next', box).onclick = e => sent(e.currentTarget.dataset.m));
+  box.onclick = async e => {
+    const t = e.target.closest('[data-send],[data-copy],[data-done]'); if (!t) return;
+    if (t.dataset.send) return sent(t.dataset.send);
+    if (t.dataset.copy) { try { await navigator.clipboard.writeText(renewalUrl(byId(t.dataset.copy))); toast('Lien personnel copié'); } catch { toast('Copie impossible', 'error'); } return; }
+    if (t.dataset.done) { const { error } = await sb.from('members').update({ renewed_season_id: se.id }).eq('id', t.dataset.done); if (error) return fail(error); toast(`${byId(t.dataset.done).first_name} : réinscription notée`); renewalCard(box); }
+  };
+}
+
+/* =====================================================================
+   Statistiques d'inscription (page Statistiques)
+   ===================================================================== */
+async function registrationStats(box) {
+  if (!box) return;
+  const se = activeSeason(), start = se ? seasonStart(se) : '1900-01-01';
+  const [pr, mr] = await Promise.all([sb.from('prospects').select('*'), sb.from('members').select('id, registration_date, how_found, renewed_season_id, status')]);
+  if (mr.error) return;
+  const pros = (pr.data || []).filter(p => p.created_at.slice(0, 10) >= start);
+  const conv = pros.filter(p => p.status === 'inscrit');
+  const delays = conv.filter(p => p.converted_at).map(p => (new Date(p.converted_at) - new Date(p.created_at)) / 86400000);
+  const tried = pros.filter(p => p.trial_present), triedConv = tried.filter(p => p.status === 'inscrit');
+  const newMembers = mr.data.filter(m => (m.registration_date || '') >= start);
+  const renewed = se ? mr.data.filter(m => m.renewed_season_id === se.id).length : 0;
+  const pct = (a, b) => b ? Math.round(a / b * 100) + ' %' : '—';
+  const bars = (rows) => { const max = Math.max(1, ...rows.map(r => r[1])); return rows.length ? `<div class="bars">${rows.map(([l, n, extra]) => `<div class="bar-row"><span>${esc(l)}</span><div class="bar"><span style="width:${n / max * 100}%"></span></div><strong>${n}</strong></div>${extra ? `<div class="small muted" style="margin:-4px 0 4px">${extra}</div>` : ''}`).join('')}</div>` : '<div class="empty">Pas encore de données.</div>'; };
+  const bySource = Object.entries(PROSPECT_SOURCE).map(([k, l]) => { const g = pros.filter(p => p.source === k); return [l, g.length, g.length ? `${g.filter(p => p.status === 'inscrit').length} inscrit(s) · ${pct(g.filter(p => p.status === 'inscrit').length, g.length)}` : '']; }).filter(r => r[1]);
+  const found = {}; newMembers.forEach(m => { const k = m.how_found || 'Non renseigné'; found[k] = (found[k] || 0) + 1; });
+  box.innerHTML = `<div class="grid two">
+    <div class="card card-pad"><h2>Inscriptions${se ? ' ' + esc(se.label) : ''}</h2><dl class="kv">
+      <dt>Nouveaux adhérents</dt><dd><strong>${newMembers.length}</strong></dd>
+      <dt>Réinscriptions</dt><dd><strong>${renewed}</strong></dd>
+      ${pr.error ? '' : `<dt>Prospects</dt><dd><strong>${pros.length}</strong> dont ${conv.length} inscrit(s)</dd>
+      <dt>Taux de transformation</dt><dd><strong>${pct(conv.length, pros.length)}</strong></dd>
+      <dt>Après un cours d’essai</dt><dd><strong>${pct(triedConv.length, tried.length)}</strong> <span class="muted small">(${triedConv.length} sur ${tried.length} venu(e)s)</span></dd>
+      <dt>Délai moyen</dt><dd><strong>${delays.length ? Math.round(delays.reduce((a, b) => a + b, 0) / delays.length) + ' jour(s)' : '—'}</strong> <span class="muted small">entre premier contact et inscription</span></dd>`}
+    </dl></div>
+    <div class="card card-pad"><h2>D’où viennent-ils ?</h2>
+      ${pr.error ? '' : `<div class="section-title" style="font-size:13px">Prospects, par origine</div>${bars(bySource)}`}
+      <div class="section-title mt" style="font-size:13px">Nouveaux adhérents : « comment avez-vous connu le club ? »</div>${bars(Object.entries(found).sort((a, b) => b[1] - a[1]))}
+    </div></div>`;
+}
+
+/* =====================================================================
+   Historique des modifications
+   ===================================================================== */
+const AUDIT_TABLES = { members: 'Membres', payments: 'Paiements', expenses: 'Dépenses', prospects: 'Prospects', courses: 'Séances', seasons: 'Saisons', club_settings: 'Paramètres', restauration: 'Restauration' };
+const AUDIT_FIELDS = { first_name: 'Prénom', last_name: 'Nom', phone: 'Téléphone', email: 'E-mail', address: 'Adresse', birth_date: 'Date de naissance', status: 'Statut', level_id: 'Niveau', discipline_id: 'Discipline',
+  fee_type: 'Cotisation', fee_amount: 'Montant cotisation', amount: 'Montant', payment_type: 'Type', payment_date: 'Date', method: 'Moyen de paiement', due_date: 'Encaissement prévu', bank_checked: 'Pointé en banque',
+  medical_certificate: 'Certificat médical', qss: 'Questionnaire de santé', registration_date: 'Date d’inscription', member_role: 'Rôle', notes: 'Notes', label: 'Libellé', category: 'Catégorie', expense_date: 'Date',
+  course_date: 'Date', title: 'Titre', start_time: 'Début', end_time: 'Fin', room: 'Salle', instructor: 'Encadrant', is_active: 'Active', opening_balance: 'Solde de départ', archived: 'Archivé',
+  trial_date: 'Date d’essai', trial_present: 'Venu(e) à l’essai', invited_at: 'Invité(e) le', trial_course_id: 'Séance d’essai', converted_at: 'Inscrit(e) le', source: 'Origine', renewal_sent_at: 'Lien de réinscription envoyé', renewed_season_id: 'Réinscrit(e) pour la saison', member_id: 'Fiche membre',
+  emergency_contact: 'Contact d’urgence', emergency_phone: 'Tél. urgence', guardian_name: 'Responsable légal', guardian_phone: 'Tél. responsable', consent_image: 'Droit à l’image', club_documents: 'Documents du club' };
+const auditVal = (k, v, t) => {
+  if (v === null || v === undefined || v === '') return '—';
+  if (k === 'status' && t === 'prospects') return PROSPECT_STATUS[v] || v;
+  if (k === 'source') return PROSPECT_SOURCE[v] || v;
+  if (k === 'status') return v === 'actif' ? 'Actif' : v === 'inactif' ? 'Inactif' : v;
+  if (v === true) return 'Oui'; if (v === false) return 'Non';
+  if (k === 'level_id') return levelName(v); if (k === 'discipline_id') return discName(v);
+  if (k.endsWith('season_id')) return S.seasons.find(x => x.id === v)?.label || 'autre saison';
+  if (typeof v === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(v)) return fmtDate(v);
+  if (typeof v === 'string' && /^\d{4}-\d{2}-\d{2}T/.test(v)) return fmtDate(v.slice(0, 10));
+  if (typeof v === 'object') return 'modifié';
+  if (/_id$/.test(k)) return 'renseigné';
+  const str = String(v); return str.length > 60 ? str.slice(0, 57) + '…' : str;
+};
+const auditRow = (a, withTable = true) => {
+  const changes = a.action === 'modification' && a.changes ? Object.entries(a.changes).filter(([k]) => AUDIT_FIELDS[k] || !/(_id|_at|token|legacy)$/.test(k)).map(([k, [o, n]]) => `<div class="small"><span class="muted">${esc(AUDIT_FIELDS[k] || k)} :</span> ${esc(auditVal(k, o, a.table_name))} → <strong>${esc(auditVal(k, n, a.table_name))}</strong></div>`).join('') : '';
+  const cls = { ajout: 'ok', modification: '', suppression: 'danger', restauration: 'warn' }[a.action] ?? '';
+  const when = new Date(a.at).toLocaleString('fr-FR', { day: '2-digit', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit' });
+  const link = a.table_name === 'members' && a.action !== 'suppression' && a.row_id ? `#/membres/${a.row_id}` : '';
+  return `<div class="bday" style="align-items:flex-start;padding:10px 16px"><div style="flex:1;min-width:0">
+    <div class="row wrap" style="gap:6px;align-items:center"><span class="badge ${cls}">${esc(a.action)}</span>${withTable ? `<span class="small muted">${esc(AUDIT_TABLES[a.table_name] || a.table_name)}</span>` : ''}
+      ${link ? `<a href="${link}" style="font-weight:600">${esc(a.label || '—')}</a>` : `<strong>${esc(a.label || '—')}</strong>`}</div>
+    ${changes}${a.action === 'suppression' && a.changes ? `<details class="small"><summary style="cursor:pointer" class="muted">Données supprimées</summary><div style="overflow-wrap:anywhere">${Object.entries(a.changes).filter(([, v]) => v !== null && v !== '' && v !== false).filter(([k]) => AUDIT_FIELDS[k]).map(([k, v]) => `${esc(AUDIT_FIELDS[k])} : ${esc(auditVal(k, v, a.table_name))}`).join(' · ')}</div></details>` : ''}
+    <div class="small muted">${esc(when)} · ${esc(a.user_name || 'Système')}</div></div></div>`;
+};
+
+S.history = { table: 'tous', limit: 100, search: '' };
+async function viewHistory(view) {
+  await loadRefs();
+  let q = sb.from('audit_log').select('*').order('at', { ascending: false }).limit(S.history.limit);
+  if (S.history.table !== 'tous') q = q.eq('table_name', S.history.table);
+  const { data, error } = await q;
+  if (error) {
+    if (!/audit_log|schema cache|does not exist|42P01|PGRST205/i.test(`${error.code} ${error.message}`)) throw error;
+    view.innerHTML = head('Historique') + '<div class="alert error">Pour activer l’historique, exécutez une fois le fichier <strong>migration-10.sql</strong> dans Supabase → Éditeur SQL.</div>'; return;
+  }
+  view.innerHTML = head('Historique', 'Qui a ajouté, modifié ou supprimé quoi, et quand. Visible par le président et le trésorier.') + `
+    <div class="toolbar"><input class="input" type="search" id="h-search" placeholder="Rechercher un nom, une personne…" value="${esc(S.history.search)}" aria-label="Rechercher dans l’historique">
+      <div class="chips">${[['tous', 'Tout'], ...Object.entries(AUDIT_TABLES)].map(([k, l]) => `<button class="chip ${S.history.table === k ? 'active' : ''}" data-t="${k}">${esc(l)}</button>`).join('')}</div></div>
+    <div class="card" id="h-list"></div>
+    ${data.length >= S.history.limit ? '<div class="row mt" style="justify-content:center"><button class="btn" id="h-more">Voir plus</button></div>' : ''}`;
+  const draw = () => {
+    const n = x => String(x || '').toLowerCase().normalize('NFD').replace(/\p{Diacritic}/gu, ''), q = n(S.history.search);
+    const rows = data.filter(a => !q || n(`${a.label} ${a.user_name}`).includes(q));
+    $('#h-list').innerHTML = rows.length ? rows.map(a => auditRow(a)).join('') : `<div class="empty">${data.length ? 'Aucune modification ne correspond.' : 'Aucune modification enregistrée pour l’instant. Chaque changement apparaîtra ici.'}</div>`;
+  };
+  draw();
+  $('#h-search').oninput = e => { S.history.search = e.target.value; draw(); };
+  $$('[data-t]', view).forEach(b => b.onclick = () => { S.history.table = b.dataset.t; S.history.limit = 100; route(); });
+  $('#h-more') && ($('#h-more').onclick = () => { S.history.limit += 100; route(); });
+}
+async function memberHistory(view, id) {
+  const { data, error } = await sb.from('audit_log').select('*').eq('row_id', id).order('at', { ascending: false }).limit(15);
+  if (error || !data?.length || !view.isConnected || currentPath() !== '/membres/' + id) return;
+  view.insertAdjacentHTML('beforeend', `<div class="card mt"><div class="card-pad" style="padding-bottom:0"><h2>Historique de la fiche</h2></div>${data.map(a => auditRow(a, false)).join('')}</div>`);
 }
 
 /* =====================================================================
@@ -1612,6 +1822,9 @@ async function openSession(id) {
   ]);
   for (const r of [cr, ar, mr, lr]) if (r.error) return fail(r.error);
   const c = cr.data;
+  // Prospects attendus à ce cours pour un essai (rubrique absente tant que migration-10.sql n'est pas exécuté)
+  const tr = await sb.from('prospects').select('id, first_name, last_name, trial_present, trial_course_id').eq('status', 'essai').eq('trial_date', c.course_date);
+  const trialsOn = !tr.error, trials = (tr.data || []).filter(p => !p.trial_course_id || p.trial_course_id === c.id);
   const linked = lr.data.map(l => l.plan_items).filter(Boolean);
   const present = new Set(ar.data.filter(a => a.present).map(a => a.member_id));
   const people = mr.data.filter(m => m.status === 'actif' || present.has(m.id));
@@ -1641,7 +1854,10 @@ async function openSession(id) {
         <input class="input" type="search" id="att-search" placeholder="Rechercher…" aria-label="Rechercher un membre">
         <button class="btn btn-sm" id="att-all">Tous</button><button class="btn btn-sm" id="att-none">Aucun</button>
       </div>
-      <div class="att-list" id="att-list">${people.map(row).join('')}</div>`,
+      <div class="att-list" id="att-list">${people.map(row).join('')}</div>
+      ${trialsOn ? `<div class="row between" style="margin:16px 0 8px"><h2 class="section-title" style="margin:0">Cours d’essai</h2><a class="small" href="#/prospects">Prospects</a></div>
+      <div class="att-list" id="trial-list">${trials.map(trialRow).join('')}</div>
+      <div class="row" style="gap:8px;margin-top:8px"><input class="input" id="trial-name" placeholder="Prénom et nom d’une personne venue à l’essai" aria-label="Personne venue à l’essai"><button class="btn btn-sm" id="trial-add">${icon('plus')}Ajouter</button></div>` : ''}`,
     foot: `<button class="icon-btn" id="c-del" aria-label="Supprimer la séance" title="Supprimer">${icon('trash')}</button>
       <button class="btn" id="c-dup">${icon('copy')}<span class="only-desktop">Dupliquer</span></button>
       <button class="btn" id="c-edit">${icon('edit')}<span class="only-desktop">Modifier</span></button>
@@ -1658,6 +1874,18 @@ async function openSession(id) {
       $('#att-search', root).oninput = e => { const v = e.target.value.toLowerCase(); $$('.att-row', list).forEach(r => r.style.display = r.dataset.name.includes(v) ? '' : 'none'); };
       $('#att-all', root).onclick = () => { $$('.att-row', list).forEach(r => { if (r.style.display !== 'none') $('input', r).checked = true; }); refresh(); };
       $('#att-none', root).onclick = () => { $$('.att-row input', list).forEach(i => i.checked = false); refresh(); };
+      const tlist = $('#trial-list', root);
+      if (tlist) {
+        tlist.addEventListener('change', e => { const r = e.target.closest('.att-row'); if (r) { r.classList.toggle('on', e.target.checked); $('.att-state', r).textContent = e.target.checked ? 'Venu(e)' : 'Attendu(e)'; } });
+        const add = async () => {
+          const inp = $('#trial-name', root), [first, ...rest] = inp.value.trim().split(/\s+/); if (!first) return;
+          const { data, error } = await sb.from('prospects').insert({ first_name: first, last_name: rest.join(' ') || null, source: 'manuel', status: 'essai', trial_date: c.course_date, trial_course_id: c.id, trial_present: true }).select().single();
+          if (error) return fail(error);
+          tlist.insertAdjacentHTML('beforeend', trialRow(data)); inp.value = ''; toast(`${first} ajouté(e) aux Prospects`);
+        };
+        $('#trial-add', root).onclick = add;
+        $('#trial-name', root).onkeydown = e => { if (e.key === 'Enter') { e.preventDefault(); add(); } };
+      }
       $('#c-save', root).onclick = async () => {
         const btn = $('#c-save', root); btn.disabled = true;
         const ids = $$('.att-row', list).filter(r => $('input', r).checked).map(r => r.dataset.m);
@@ -1667,6 +1895,7 @@ async function openSession(id) {
         const r2 = ids.length ? await sb.from('attendances').upsert(ids.map(m => ({ course_id: c.id, member_id: m, present: true })), { onConflict: 'course_id,member_id' }) : { error: null };
         btn.disabled = false;
         if (r1.error || r2.error) return fail(r1.error || r2.error);
+        if (tlist) await Promise.all($$('.att-row', tlist).map(r => sb.from('prospects').update({ trial_present: $('input', r).checked, trial_course_id: c.id }).eq('id', r.dataset.p)));
         let extra = '';
         const todo = linked.filter(i => !i.done).map(i => i.id);
         if (ids.length && todo.length) {
@@ -2016,7 +2245,7 @@ async function openRegistrations() {
     title: 'Inscriptions en ligne',
     body: data.length ? data.map(r => { const d = r.data || {}; const minor = (ageOf(d.birth_date) ?? 99) < 18; return `
       <div class="card card-pad mb reg-card" data-r="${r.id}">
-        <div class="row between wrap"><div><strong style="font-size:16px">${esc(d.first_name)} ${esc(d.last_name)}</strong><div class="small muted">Reçue le ${fmtDate(r.created_at.slice(0, 10))}${d.birth_date ? ` · ${ageOf(d.birth_date)} ans` : ''}${minor ? ' · <span class="badge warn">Mineur</span>' : ''}</div></div>
+        <div class="row between wrap"><div><strong style="font-size:16px">${esc(d.first_name)} ${esc(d.last_name)}</strong>${d.renewal_token ? ' <span class="badge ok">Réinscription</span>' : ''}<div class="small muted">Reçue le ${fmtDate(r.created_at.slice(0, 10))}${d.birth_date ? ` · ${ageOf(d.birth_date)} ans` : ''}${minor ? ' · <span class="badge warn">Mineur</span>' : ''}</div></div>
           ${isAdmin() ? `<div class="row" style="gap:6px"><button class="btn btn-sm" data-refuse="${r.id}">Refuser</button><button class="btn btn-sm btn-primary" data-accept="${r.id}">${icon('check')}Créer la fiche</button></div>` : ''}</div>
         <dl class="kv small mt">
           <dt>Téléphone</dt><dd>${esc(d.phone || '—')}</dd><dt>E-mail</dt><dd>${esc(d.email || '—')}</dd>
@@ -2043,6 +2272,16 @@ async function openRegistrations() {
         if (d.health_mode === 'questionnaire' && d.health_attested) member.qss = true;
         if (d.health_files?.length) member.health_files = d.health_files;
         b.disabled = true;
+        // Réinscription : on met à jour la fiche existante au lieu d'en créer une nouvelle
+        const prev = d.renewal_token ? (await sb.from('members').select('id, registration_date, discipline_id, level_id, fee_amount').eq('renewal_token', d.renewal_token).maybeSingle()).data : null;
+        if (prev) {
+          Object.assign(member, { registration_date: prev.registration_date, discipline_id: prev.discipline_id ?? member.discipline_id, level_id: prev.level_id ?? member.level_id, fee_amount: member.fee_amount ?? prev.fee_amount,
+            renewed_season_id: activeSeason()?.id || null, medical_certificate: !!member.medical_certificate, qss: !!member.qss });
+          const { error } = await sb.from('members').update(member).eq('id', prev.id);
+          if (error) { b.disabled = false; return fail(error); }
+          await sb.from('registrations').delete().eq('id', r.id);
+          closeModal(); toast(`Réinscription de ${d.first_name} enregistrée`); return go('/membres/' + prev.id);
+        }
         const { data: created, error } = await sb.from('members').insert(member).select('id').single();
         if (error) { b.disabled = false; return fail(error); }
         await sb.from('registrations').delete().eq('id', r.id); // la fiche membre remplace la demande
@@ -2242,7 +2481,7 @@ const XLSX_URL = 'https://cdn.jsdelivr.net/npm/xlsx@0.18.5/+esm';
 const BACKUP_SHEETS = {
   'Membres': 'members', 'Paiements': 'payments', 'Dépenses': 'expenses', 'Séances': 'courses', 'Présences': 'attendances',
   'Planification': 'plan_items', 'Disciplines': 'disciplines', 'Niveaux': 'levels', 'Saisons': 'seasons', 'Paramètres': 'club_settings',
-  'Historique grades': 'level_history', 'Lien séances-programme': 'course_plan_items',
+  'Historique grades': 'level_history', 'Lien séances-programme': 'course_plan_items', 'Prospects': 'prospects',
 };
 
 async function downloadBackup(btn) {
@@ -2292,10 +2531,10 @@ async function downloadBackup(btn) {
 }
 
 /* ---------- Restauration ---------- */
-const BOOL_COLS = new Set(['medical_certificate', 'qss', 'medical_waiver', 'other_defense_sport', 'consent_image', 'consent_data', 'rules_read', 'rules_accepted', 'insurance_informed', 'parental_authorization', 'present', 'done', 'bank_checked', 'archived', 'is_active']);
+const BOOL_COLS = new Set(['trial_present', 'medical_certificate', 'qss', 'medical_waiver', 'other_defense_sport', 'consent_image', 'consent_data', 'rules_read', 'rules_accepted', 'insurance_informed', 'parental_authorization', 'present', 'done', 'bank_checked', 'archived', 'is_active']);
 const ARRAY_COLS = new Set(['revenue_types', 'expense_categories', 'rooms', 'plan_sections']);
 const JSON_COLS = new Set(['club_documents', 'health_files']);
-const DATE_COLS = new Set(['birth_date', 'registration_date', 'medical_waiver_validity', 'course_date', 'payment_date', 'due_date', 'expense_date', 'changed_on']);
+const DATE_COLS = new Set(['trial_date', 'birth_date', 'registration_date', 'medical_waiver_validity', 'course_date', 'payment_date', 'due_date', 'expense_date', 'changed_on']);
 const TIME_COLS = new Set(['start_time', 'end_time', 'default_start_time', 'default_end_time']);
 const PHONE_COLS = new Set(['phone', 'emergency_phone', 'guardian_phone', 'whatsapp_number']);
 
@@ -2341,7 +2580,7 @@ async function restoreFromFile(file) {
   openModal({
     title: 'Restaurer une sauvegarde',
     body: `
-      <div class="alert error"><strong>Attention :</strong> toutes les données actuelles (membres, paiements, dépenses, séances, présences, planification, grades, paramètres) seront <strong>remplacées</strong> par celles du fichier. Les comptes de l’équipe et les fichiers de cours sont conservés.</div>
+      <div class="alert error"><strong>Attention :</strong> toutes les données actuelles (membres, paiements, dépenses, séances, présences, planification, grades, paramètres, prospects) seront <strong>remplacées</strong> par celles du fichier. Les comptes de l’équipe et les fichiers de cours sont conservés.</div>
       <p style="margin:0 0 8px">Fichier : <strong>${esc(file.name)}</strong>${dateInName ? ` · sauvegarde du <strong>${fmtDate(dateInName)}</strong>` : ''}</p>
       <table class="table small"><tbody>${Object.entries(counts).map(([k, n]) => `<tr><td>${esc(k)}</td><td style="text-align:right"><strong>${n}</strong></td></tr>`).join('')}
         <tr><td>Total encaissé dans le fichier</td><td style="text-align:right"><strong>${fmtMoney(total)}</strong></td></tr></tbody></table>
@@ -2712,6 +2951,7 @@ async function viewStats(view) {
         ${perSession.length ? `<div class="spark" role="img" aria-label="Nombre de présents à chacune des ${perSession.length} séances">${perSession.slice(-24).map(x => `<div class="spark-col" title="${esc(fmtDate(x.s.course_date))} · ${esc(x.s.title)} : ${x.n} présent(s)"><span class="spark-n">${x.n}</span><div class="spark-bar" style="height:${Math.max(4, x.n / maxN * 100)}%"></div><span class="spark-d">${parseDay(x.s.course_date).toLocaleDateString('fr-FR', { day: 'numeric', month: 'numeric' })}</span></div>`).join('')}</div>` : '<div class="empty">Aucun appel enregistré pour l’instant.</div>'}
       </div>
     </div>
+    <div id="st-regs" class="mb"></div>
     <div class="toolbar between">
       <h2 class="section-title" style="margin:0">Détail par adhérent ${S.stats.filter !== 'tous' ? `<span class="badge">${esc(S.stats.filter)}</span> <button class="link small" id="clear-f" style="text-transform:none;letter-spacing:0">tout afficher</button>` : ''}</h2>
       <div class="chips">${[['taux', 'Par taux'], ['nom', 'Par nom']].map(([k, l]) => `<button class="chip ${S.stats.sort === k ? 'active' : ''}" data-sort="${k}">${l}</button>`).join('')}</div>

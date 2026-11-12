@@ -171,5 +171,12 @@ export function buildDemoData(userId) {
     tshirt_size: 'S', fee_type: 'Nouvel adhérent(e)', emergency_contact: 'Paul (conjoint)', emergency_phone: '06 00 00 99 02', medical_notes: null, how_found: 'Réseaux sociaux',
     other_defense_sport: false, other_defense_sport_details: null, consent_image: true, consent_data: true, rules_read: true, rules_accepted: true, insurance_informed: true } }];
 
-  return { profiles, club_settings, seasons, disciplines, levels: L, members, level_history, courses, attendances, payments, expenses, plan_items, course_plan_items, registrations };
+  // Quelques prospects : un à relancer, un cours d'essai à venir, un tout juste ajouté
+  const prospects = [
+    { id: id('pros'), first_name: 'Inès', last_name: 'Barbier', phone: '06 00 00 88 01', email: null, source: 'lien', status: 'invite', invited_at: ts(addDays(now, -10)), notes: 'Rencontrée au forum des associations', trial_present: false, created_at: ts(addDays(now, -10)) },
+    { id: id('pros'), first_name: 'Karim', last_name: 'Benali', phone: '06 00 00 88 02', email: null, source: 'manuel', status: 'essai', trial_date: next ? next.course_date : iso(addDays(now, 3)), trial_course_id: next?.id || null, trial_present: false, notes: 'Collègue d’un adhérent', created_at: ts(addDays(now, -4)) },
+    { id: id('pros'), first_name: 'Manon', last_name: 'Lefèvre', phone: '06 00 00 88 03', email: null, source: 'pdf', status: 'invite', invited_at: ts(addDays(now, -2)), trial_present: false, created_at: ts(addDays(now, -2)) },
+  ];
+
+  return { profiles, club_settings, seasons, disciplines, levels: L, members, level_history, courses, attendances, payments, expenses, plan_items, course_plan_items, registrations, prospects, audit_log: [] };
 }

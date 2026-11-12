@@ -30,10 +30,22 @@ const nowIso = () => new Date().toISOString();
 const today = () => { const d = new Date(); return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`; };
 const clone = v => JSON.parse(JSON.stringify(v));
 const table = name => (db[name] ||= []);
+(db.members || []).forEach(m => { m.renewal_token ??= uuid(); }); // bases de démo créées avant la réinscription
+save();
+
+/* Historique des modifications (comme les déclencheurs de la vraie base) */
+const AUDITED = new Set(['members', 'payments', 'expenses', 'prospects', 'courses', 'seasons', 'club_settings']);
+function audit(t, action, row, changes = null) {
+  if (!AUDITED.has(t)) return;
+  let label = [row.first_name, row.last_name].filter(Boolean).join(' ') || row.label || row.title || row.club_name || null;
+  if (t === 'payments') { const m = table('members').find(x => x.id === row.member_id); label = [m && `${m.first_name} ${m.last_name}`, row.payment_type, row.amount != null ? row.amount + ' €' : null].filter(Boolean).join(' · '); }
+  const me = table('profiles').find(p => p.id === DEMO_USER.id);
+  table('audit_log').push({ id: uuid(), at: nowIso(), user_id: DEMO_USER.id, user_name: me?.full_name || 'Démo', table_name: t, row_id: row.id ?? null, action, label, changes });
+}
 
 /* Valeurs par défaut (comme dans la vraie base) */
 const DEFAULTS = {
-  members: () => ({ status: 'actif', member_role: 'membre', registration_date: today(), medical_certificate: false, qss: false, medical_waiver: false, other_defense_sport: false, consent_image: false, consent_data: false, rules_read: false, rules_accepted: false, insurance_informed: false, parental_authorization: false, updated_at: nowIso() }),
+  members: () => ({ renewal_token: uuid(), status: 'actif', member_role: 'membre', registration_date: today(), medical_certificate: false, qss: false, medical_waiver: false, other_defense_sport: false, consent_image: false, consent_data: false, rules_read: false, rules_accepted: false, insurance_informed: false, parental_authorization: false, updated_at: nowIso() }),
   payments: () => ({ status: 'payé', bank_checked: false, archived: false, payment_date: today() }),
   expenses: () => ({ bank_checked: false, archived: false, expense_date: today() }),
   plan_items: () => ({ done: false, position: 0 }),
@@ -43,7 +55,7 @@ const DEFAULTS = {
   levels: () => ({ is_active: true }),
   level_history: () => ({ changed_on: today() }),
   registrations: () => ({ status: 'nouvelle' }),
-  prospects: () => ({ source: 'manuel', status: 'a_contacter' }),
+  prospects: () => ({ source: 'manuel', status: 'a_contacter', trial_present: false }),
 };
 const NO_ID = new Set(['attendances', 'course_plan_items', 'club_settings']);
 
@@ -121,7 +133,7 @@ class Query {
     }
     if (this.op === 'insert') {
       const list = [].concat(this.payload).map(r => ({ ...(DEFAULTS[this.t]?.() || {}), ...(NO_ID.has(this.t) ? {} : { id: uuid() }), created_at: nowIso(), ...clone(r) }));
-      T.push(...list); save();
+      T.push(...list); list.forEach(r => audit(this.t, 'ajout', r)); save();
       return this.returning ? this.result(clone(list)) : { data: null, error: null };
     }
     if (this.op === 'update') {
@@ -129,14 +141,17 @@ class Query {
       for (const r of hit) {
         if (this.t === 'members' && 'level_id' in this.payload && this.payload.level_id !== r.level_id)
           table('level_history').push({ id: uuid(), member_id: r.id, from_level_id: r.level_id ?? null, to_level_id: this.payload.level_id ?? null, changed_on: today(), notes: null, created_at: nowIso() });
+        const changes = {}; for (const [k, v] of Object.entries(this.payload)) if (k !== 'updated_at' && JSON.stringify(r[k] ?? null) !== JSON.stringify(v ?? null)) changes[k] = [r[k] ?? null, v ?? null];
         Object.assign(r, clone(this.payload));
         if ('updated_at' in r) r.updated_at = nowIso();
+        if (Object.keys(changes).length) audit(this.t, 'modification', r, changes);
       }
       save();
       return this.returning ? this.result(clone(hit)) : { data: null, error: null };
     }
     if (this.op === 'delete') {
       const gone = T.filter(r => this.match(r)), ids = new Set(gone.map(r => r.id));
+      gone.forEach(r => audit(this.t, 'suppression', r, clone(r)));
       db[this.t] = T.filter(r => !this.match(r));
       for (const [child, fk] of CASCADE[this.t] || []) db[child] = table(child).filter(r => !ids.has(r[fk]));
       save();
@@ -164,11 +179,14 @@ export function createClient() {
     from: t => new Query(t),
     rpc: async (fn, args = {}) => {
       if (fn === 'public_club_info') { const s = db.club_settings[0] || {}; return { data: { club_name: s.club_name, fee_new: s.fee_new, fee_returning: s.fee_returning, fee_jobseeker: s.fee_jobseeker, fee_student: s.fee_student, club_email: s.club_email, bank_holder: s.bank_holder, bank_iban: s.bank_iban, bank_bic: s.bank_bic, bank_name: s.bank_name, club_documents: s.club_documents || {} }, error: null }; }
+      if (fn === 'renewal_info') { const m = table('members').find(x => x.renewal_token === args.p_token); return { data: m ? Object.fromEntries(['first_name', 'last_name', 'birth_date', 'gender', 'phone', 'email', 'address', 'tshirt_size', 'emergency_contact', 'emergency_phone', 'guardian_name', 'guardian_phone', 'guardian_email', 'pickup_persons'].map(k => [k, m[k] ?? null])) : null, error: null }; }
       if (fn === 'restore_backup') {
         const p = args.payload || {};
         if (!Array.isArray(p.members)) return { data: null, error: { message: 'Fichier de sauvegarde invalide : onglet Membres introuvable.' } };
         for (const t of ['attendances', 'course_plan_items', 'level_history', 'payments', 'expenses', 'plan_items', 'courses', 'members', 'levels', 'disciplines', 'seasons']) db[t] = clone(p[t] || []);
         if (Array.isArray(p.club_settings) && p.club_settings.length) db.club_settings = [clone(p.club_settings[0])];
+        if (Array.isArray(p.prospects)) db.prospects = clone(p.prospects);
+        table('audit_log').push({ id: uuid(), at: nowIso(), user_name: 'Démo', table_name: 'restauration', action: 'restauration', label: 'Données restaurées depuis une sauvegarde' });
         save();
         return { data: { membres: db.members.length, paiements: db.payments.length, depenses: db.expenses.length, seances: db.courses.length, presences: db.attendances.length, planification: db.plan_items.length }, error: null };
       }
