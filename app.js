@@ -3266,14 +3266,14 @@ async function viewAccounting(view) {
   const payer = p => p.member_id ? mName(p.member_id) : (p.notes || 'Recette hors adhérent');
   const norm = s => (s || '').toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g, '');
 
-  view.innerHTML = head('Comptabilité', `${fmtMoney(T.paid)} encaissés · ${fmtMoney(T.pending)} en attente · ${fmtMoney(T.exp)} de dépenses${D.season ? ' · saison ' + esc(D.season.label) : ''}`,
+  view.innerHTML = head('Comptabilité', `<strong>Solde actuel : ${fmtMoney(T.balance)}</strong> · ${fmtMoney(T.paid)} encaissés · ${fmtMoney(T.exp)} déboursés · ${fmtMoney(T.pending)} en attente${D.season ? ' · saison ' + esc(D.season.label) : ''}`,
     `<button class="btn" id="bilan">${icon('chart')}Bilan comptable</button><button class="btn" id="pdf">${icon('file')}Export PDF</button>`) + `
     <div class="grid acc-stats mb">
-      <div class="card stat"><div class="label">Solde début d’exercice</div><div class="value">${fmtMoney(T.opening)}</div></div>
-      <div class="card stat"><div class="label">Revenus encaissés</div><div class="value" style="color:var(--ok)">${fmtMoney(T.paid)}</div></div>
-      <div class="card stat"><div class="label">En attente</div><div class="value" style="color:var(--warn)">${fmtMoney(T.pending)}</div></div>
-      <div class="card stat"><div class="label">Dépenses</div><div class="value" style="color:var(--danger)">${fmtMoney(T.exp)}</div></div>
-      <div class="card stat accent"><div class="label">Solde comptable</div><div class="value">${fmtMoney(T.balance)}</div><div class="hint">Début + encaissés − dépenses</div></div>
+      <div class="card stat accent"><div class="label">Solde actuel</div><div class="value">${fmtMoney(T.balance)}</div><div class="hint">${fmtMoney(T.opening)} + ${fmtMoney(T.paid)} − ${fmtMoney(T.exp)}</div></div>
+      <div class="card stat"><div class="label">Solde de départ</div><div class="value">${fmtMoney(T.opening)}</div><div class="hint">Début de saison</div></div>
+      <div class="card stat"><div class="label">Encaissé</div><div class="value" style="color:var(--ok)">${fmtMoney(T.paid)}</div></div>
+      <div class="card stat"><div class="label">Déboursé</div><div class="value" style="color:var(--danger)">${fmtMoney(T.exp)}</div></div>
+      <div class="card stat"><div class="label">En attente</div><div class="value" style="color:var(--warn)">${fmtMoney(T.pending)}</div><div class="hint">Pas encore dans le solde</div></div>
       <div class="card stat"><div class="label">Pointé banque</div><div class="value">${fmtMoney(T.bank)}</div><div class="hint">${fmtMoney(T.bankIn)} − ${fmtMoney(T.bankOut)}</div></div>
     </div>
     <div class="toolbar between">
