@@ -166,17 +166,17 @@ function confirmBox(title, text, okLabel = 'Supprimer') {
 const NAV = [
   { path: '/', label: 'Tableau de bord', short: 'Accueil', icon: 'home' },
   { path: '/membres', label: 'Membres', short: 'Membres', icon: 'users' },
-  { path: '/inscription', label: 'Inscription en ligne', icon: 'userplus' },
   { path: '/planning', label: 'Planning', short: 'Planning', icon: 'calendar' },
-  { path: '/planification', label: 'Planification annuelle', icon: 'list' },
-  { path: '/stages', label: 'Stages', icon: 'flag' },
-  { path: '/guide', label: 'Guide enseignant', icon: 'book' },
   { path: '/paiements', label: 'Comptabilité', short: 'Compta', icon: 'euro', admin: true },
   { path: '/statistiques', label: 'Statistiques', short: 'Stats', icon: 'chart' },
+  { path: '/inscription', label: 'Inscription en ligne', icon: 'userplus' },
+  { path: '/planification', label: 'Planification annuelle', icon: 'list' },
+  { path: '/guide', label: 'Guide enseignant', icon: 'book' },
   { path: '/whatsapp', label: 'WhatsApp', icon: 'chat' },
-  { path: '/historique', label: 'Historique', icon: 'clock', admin: true },
-  { path: '/parametres', label: 'Paramètres', icon: 'gear' },
   { path: '/prospects', label: 'Prospects', icon: 'star' },
+  { path: '/stages', label: 'Stages', icon: 'flag' },
+  { path: '/parametres', label: 'Paramètres', icon: 'gear' },
+  { path: '/historique', label: 'Historique', icon: 'clock', admin: true },
 ];
 const SETTINGS_SUBPAGES = ['/disciplines', '/niveaux']; // pages ouvertes depuis les Paramètres
 const navItems = () => NAV.filter(n => !n.admin || isAdmin());
