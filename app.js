@@ -529,7 +529,7 @@ async function viewMembers(view) {
   if (!filters.find(f => f.k === S.memberFilter)) S.memberFilter = 'tous';
 
   view.innerHTML = head('Membres', `${members.filter(m => m.status === 'actif').length} membres actifs · ${members.length} inscrits`,
-    `${window.DEFENDR_DEMO ? '' : `<button class="btn" id="print-tshirts">${icon('file')}Imprimer (T-shirts)</button>`}<button class="btn btn-primary" id="new-member">${icon('plus')}Nouveau membre</button>`) + `
+    `${window.DEFENDR_DEMO ? '' : `<button class="btn" id="print-tshirts">${icon('file')}Imprimer (T-shirts)</button>`}<button class="btn" id="export-members">${icon('file')}Exporter (Excel)</button><button class="btn btn-primary" id="new-member">${icon('plus')}Nouveau membre</button>`) + `
     <div id="reg-banner"></div>
     <div class="toolbar">
       <input class="input" type="search" id="m-search" placeholder="Rechercher un membre…" value="${esc(S.memberSearch)}" aria-label="Rechercher un membre">
@@ -571,6 +571,10 @@ async function viewMembers(view) {
     if (!shownRows.length) return toast('Aucun membre à imprimer');
     const f = filters.find(x => x.k === S.memberFilter);
     printTshirtList(shownRows, f.label + (S.memberSearch ? ` · recherche « ${S.memberSearch} »` : ''));
+  };
+  $('#export-members').onclick = () => {
+    if (!shownRows.length) return toast('Aucun membre à exporter');
+    exportMembersXlsx(shownRows, filters.find(x => x.k === S.memberFilter).label, isAdmin() ? balance : null, $('#export-members'));
   };
   sb.from('registrations').select('id', { count: 'exact', head: true }).eq('status', 'nouvelle').then(({ count }) => {
     if (!count || !$('#reg-banner')) return;
@@ -2571,6 +2575,44 @@ function printDoc(html, cls = '') {
   setTimeout(() => window.print(), 60);
 }
 
+/* Export tableur de la liste des membres affichée (filtre + recherche) */
+async function exportMembersXlsx(rows, label, balance, btn) {
+  const html = btn?.innerHTML;
+  if (btn) { btn.disabled = true; btn.textContent = 'Préparation…'; }
+  try {
+    const XLSX = await import(XLSX_URL);
+    const yn = v => v ? 'Oui' : 'Non';
+    const d = v => v ? new Date(v + 'T12:00:00').toLocaleDateString('fr-FR') : '';
+    const sorted = rows.slice().sort((a, b) => (a.last_name || '').localeCompare(b.last_name || '', 'fr') || (a.first_name || '').localeCompare(b.first_name || '', 'fr'));
+    const data = sorted.map(m => {
+      const age = ageOf(m.birth_date);
+      const r = {
+        'Nom': (m.last_name || '').toUpperCase(), 'Prénom': m.first_name || '', 'Genre': m.gender || '',
+        'Date de naissance': d(m.birth_date), 'Âge': age ?? '', 'Adresse': m.address || '',
+        'E-mail': m.email || m.guardian_email || '', 'Téléphone': m.phone || m.guardian_phone || '',
+        'Discipline': m.discipline_id ? discName(m.discipline_id) : '', 'Niveau': m.level_id ? levelName(m.level_id) : '',
+        'Statut': m.status === 'actif' ? 'Actif' : 'Inactif', 'Date d’inscription': d(m.registration_date),
+        'Taille T-shirt': m.tshirt_size || '',
+        'Certificat médical / QSS': m.medical_certificate ? 'Certificat' : m.qss ? 'QSS' : 'Manquant',
+        'Droit à l’image': yn(m.consent_image),
+        'Contact d’urgence': m.emergency_contact || '', 'Tél. urgence': m.emergency_phone || '',
+        'Responsable légal (mineurs)': age != null && age < 18 ? m.guardian_name || '' : '',
+      };
+      if (balance) { r['Cotisation'] = m.fee_type || ''; r['Montant cotisation (€)'] = m.fee_amount != null ? Number(m.fee_amount) : ''; r['Reste à payer (€)'] = Math.max(0, balance(m)); }
+      return r;
+    });
+    const keys = [...new Set(data.flatMap(r => Object.keys(r)))];
+    const ws = XLSX.utils.json_to_sheet(data, { header: keys });
+    ws['!cols'] = keys.map(k => ({ wch: Math.min(40, Math.max(k.length, ...data.map(r => String(r[k] ?? '').length)) + 2) }));
+    const wb = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(wb, ws, 'Membres');
+    const slug = label.normalize('NFD').replace(/\p{Diacritic}/gu, '').replace(/[^\w]+/g, '-').toLowerCase();
+    XLSX.writeFile(wb, `Membres-${slug}-${isoDay(new Date())}.xlsx`);
+    toast(`${rows.length} membre${rows.length > 1 ? 's' : ''} exporté${rows.length > 1 ? 's' : ''}`);
+  } catch (e) { fail(e); }
+  if (btn) { btn.disabled = false; btn.innerHTML = html; }
+}
+
 function printTshirtList(rows, label) {
   const SIZES = ['XS', 'S', 'M', 'L', 'XL', 'XXL', 'XXXL'];
   const count = {};
@@ -2620,8 +2662,34 @@ function printAttestation(m, pays, season) {
 
 async function printAgReport({ sessions, rows, avgPresent, avgRate, cats }) {
   const season = activeSeason(), s = S.settings || {};
-  const [{ data: all, error }, D] = await Promise.all([sb.from('members').select('*'), loadAccounting()]);
+  const [{ data: all, error }, D, { data: allPays }, { data: allStages }] = await Promise.all([
+    sb.from('members').select('*'), loadAccounting(),
+    sb.from('payments').select('season_id, member_id, payment_type, status').eq('archived', false),
+    sb.from('stages').select('*').order('stage_date'),
+  ]);
   if (error) throw error;
+  // Évolution : adhérents ayant une cotisation enregistrée, saison par saison
+  const seasonsSorted = S.seasons.slice().sort((a, b) => seasonStart(a).localeCompare(seasonStart(b)));
+  const evo = seasonsSorted.map(se => {
+    const ids = new Set((allPays || []).filter(p => p.season_id === se.id && p.member_id && /cotis|adh[ée]sion|licence/i.test(p.payment_type || '')).map(p => p.member_id));
+    return { se, n: ids.size };
+  }).filter(x => x.n > 0 || x.se.id === season?.id);
+  const cur = evo.find(x => x.se.id === season?.id);
+  if (cur) cur.n = Math.max(cur.n, all.filter(m => m.status === 'actif').length);
+  const evoHtml = evo.length > 1 ? `<h2 class="section-title mt">Évolution des effectifs</h2>
+    <table class="table"><thead><tr><th>Saison</th><th style="text-align:right">Adhérents</th><th style="text-align:right">Évolution</th></tr></thead><tbody>
+      ${evo.map((x, i) => { const prev = evo[i - 1]; const diff = prev ? x.n - prev.n : null;
+        return `<tr><td>${esc(x.se.label)}${x.se.id === season?.id ? ' (en cours)' : ''}</td><td style="text-align:right"><strong>${x.n}</strong></td><td style="text-align:right">${diff == null ? '—' : (diff > 0 ? '+' : '') + diff + (prev.n ? ` (${diff > 0 ? '+' : ''}${Math.round(diff / prev.n * 100)} %)` : '')}</td></tr>`; }).join('')}
+    </tbody></table><p class="small muted">Saisons passées : adhérents ayant réglé une cotisation. Saison en cours : adhérents actifs.</p>` : '';
+  // Stages de la saison (du 1er août au 31 juillet)
+  const sStart = season ? seasonStart(season) : null;
+  const sEnd = sStart ? `${Number(sStart.slice(0, 4)) + 1}-07-31` : null;
+  const stagesSeason = (allStages || []).filter(st => !sStart || (st.stage_date >= sStart && st.stage_date <= sEnd));
+  const stagesHtml = `<h2 class="section-title mt">Stages${season ? ' de la saison' : ''} (${stagesSeason.length})</h2>` + (stagesSeason.length
+    ? `<table class="table"><thead><tr><th>Date</th><th>Stage</th><th>Lieu</th><th>Public</th></tr></thead><tbody>
+        ${stagesSeason.map(st => `<tr><td>${fmtDate(st.stage_date)}</td><td>${esc(st.title)}</td><td>${esc(st.place || '')}</td><td>${esc(st.audience || '')}</td></tr>`).join('')}
+      </tbody></table>`
+    : '<p class="muted">Aucun stage enregistré sur la période.</p>');
   const active = all.filter(m => m.status === 'actif');
   const count = fn => active.filter(fn).length;
   const pct = n => active.length ? Math.round(n / active.length * 100) + ' %' : '—';
@@ -2641,6 +2709,8 @@ async function printAgReport({ sessions, rows, avgPresent, avgRate, cats }) {
       <div>${t('Disciplines et niveaux', S.disciplines.filter(d => count(m => m.discipline_id === d.id)).map(d => tr(esc(d.name), count(m => m.discipline_id === d.id), pct(count(m => m.discipline_id === d.id)))).join('') + S.levels.filter(l => l.is_active || count(m => m.level_id === l.id)).sort((x, y) => x.rank - y.rank).map(l => tr(l.rank + '. ' + esc(l.name), count(m => m.level_id === l.id), pct(count(m => m.level_id === l.id)))).join(''))}</div>
     </div>
     ${t('Activité', tr('Séances avec appel', sessions.length) + tr('Présents par séance (moyenne)', avgPresent.toLocaleString('fr-FR', { maximumFractionDigits: 1 })) + tr('Taux de présence moyen', avgRate + ' %') + cats.map(c => tr('Adhérents « ' + c.k + ' »', rows.filter(r => r.sessions.length && r.label === c.k).length)).join(''))}
+    ${evoHtml}
+    ${stagesHtml}
     <h2 class="section-title mt">Bilan financier</h2>
     ${bilanHtml(D)}
   `);
