@@ -529,7 +529,7 @@ async function viewMembers(view) {
   if (!filters.find(f => f.k === S.memberFilter)) S.memberFilter = 'tous';
 
   view.innerHTML = head('Membres', `${members.filter(m => m.status === 'actif').length} membres actifs · ${members.length} inscrits`,
-    `<button class="btn btn-primary" id="new-member">${icon('plus')}Nouveau membre</button>`) + `
+    `${window.DEFENDR_DEMO ? '' : `<button class="btn" id="print-tshirts">${icon('file')}Imprimer (T-shirts)</button>`}<button class="btn btn-primary" id="new-member">${icon('plus')}Nouveau membre</button>`) + `
     <div id="reg-banner"></div>
     <div class="toolbar">
       <input class="input" type="search" id="m-search" placeholder="Rechercher un membre…" value="${esc(S.memberSearch)}" aria-label="Rechercher un membre">
@@ -537,10 +537,12 @@ async function viewMembers(view) {
     </div>
     <div class="card" id="m-list"></div>`;
 
+  let shownRows = [];
   const draw = () => {
     const q = S.memberSearch.toLowerCase().normalize('NFD').replace(/\p{Diacritic}/gu, '');
     const f = filters.find(x => x.k === S.memberFilter);
     const rows = members.filter(f.fn).filter(m => !q || [fullName(m), m.email, m.phone].join(' ').toLowerCase().normalize('NFD').replace(/\p{Diacritic}/gu, '').includes(q));
+    shownRows = rows;
     const box = $('#m-list');
     if (!rows.length) { box.innerHTML = `<div class="empty">${members.length ? 'Aucun membre ne correspond.' : 'Aucun membre pour l’instant. Ajoutez le premier avec « Nouveau membre ».'}</div>`; return; }
     const statusBadge = m => m.status === 'actif' ? '<span class="badge ok">Actif</span>' : '<span class="badge">Inactif</span>';
@@ -565,6 +567,11 @@ async function viewMembers(view) {
   $('#m-search').oninput = e => { S.memberSearch = e.target.value; draw(); };
   $$('[data-f]', view).forEach(b => b.onclick = () => { S.memberFilter = b.dataset.f; $$('[data-f]', view).forEach(x => x.classList.toggle('active', x === b)); draw(); });
   $('#new-member').onclick = () => memberForm(null, id => go('/membres/' + id));
+  if ($('#print-tshirts')) $('#print-tshirts').onclick = () => {
+    if (!shownRows.length) return toast('Aucun membre à imprimer');
+    const f = filters.find(x => x.k === S.memberFilter);
+    printTshirtList(shownRows, f.label + (S.memberSearch ? ` · recherche « ${S.memberSearch} »` : ''));
+  };
   sb.from('registrations').select('id', { count: 'exact', head: true }).eq('status', 'nouvelle').then(({ count }) => {
     if (!count || !$('#reg-banner')) return;
     $('#reg-banner').innerHTML = `<div class="alert info row between wrap" style="gap:8px"><span><strong>${count} demande${count > 1 ? 's' : ''} d’inscription en ligne</strong> à traiter.</span><button class="btn btn-sm btn-primary" id="open-regs">Voir</button></div>`;
@@ -2562,6 +2569,24 @@ function printDoc(html, cls = '') {
   el.className = cls;
   el.innerHTML = html;
   setTimeout(() => window.print(), 60);
+}
+
+function printTshirtList(rows, label) {
+  const SIZES = ['XS', 'S', 'M', 'L', 'XL', 'XXL', 'XXXL'];
+  const count = {};
+  rows.forEach(m => { const k = m.tshirt_size || 'Non renseignée'; count[k] = (count[k] || 0) + 1; });
+  const keys = [...SIZES.filter(k => count[k]), ...Object.keys(count).filter(k => !SIZES.includes(k) && k !== 'Non renseignée'), ...(count['Non renseignée'] ? ['Non renseignée'] : [])];
+  const sorted = rows.slice().sort((a, b) => (a.last_name || '').localeCompare(b.last_name || '', 'fr') || (a.first_name || '').localeCompare(b.first_name || '', 'fr'));
+  printDoc(`
+    <h1>${esc(S.settings?.club_name || 'Club')}</h1>
+    <p class="muted">Liste des membres et tailles de T-shirt — ${esc(label)} · ${rows.length} membre${rows.length > 1 ? 's' : ''} · édité le ${new Date().toLocaleDateString('fr-FR', { day: 'numeric', month: 'long', year: 'numeric' })}</p>
+    <h2 class="section-title mt">Récapitulatif par taille</h2>
+    <table class="table" style="width:auto"><thead><tr>${keys.map(k => `<th style="text-align:center">${esc(k)}</th>`).join('')}<th style="text-align:center">Total</th></tr></thead>
+      <tbody><tr>${keys.map(k => `<td style="text-align:center">${count[k]}</td>`).join('')}<td style="text-align:center"><strong>${rows.length}</strong></td></tr></tbody></table>
+    <h2 class="section-title mt">Détail</h2>
+    <table class="table"><thead><tr><th style="width:28px">#</th><th>Nom</th><th>Prénom</th><th>Taille T-shirt</th><th style="width:60px">Remis</th></tr></thead><tbody>
+      ${sorted.map((m, i) => `<tr><td>${i + 1}</td><td>${esc((m.last_name || '').toUpperCase())}</td><td>${esc(m.first_name || '')}</td><td><strong>${esc(m.tshirt_size || '—')}</strong></td><td>☐</td></tr>`).join('')}
+    </tbody></table>`);
 }
 
 function printAttestation(m, pays, season) {
