@@ -2572,6 +2572,18 @@ function printDoc(html, cls = '') {
   if (!el) { el = document.createElement('div'); el.id = 'print-root'; document.body.appendChild(el); }
   el.className = cls;
   el.innerHTML = html;
+  // Sur téléphone (iPhone surtout, et a fortiori dans l'appli installée sur l'écran d'accueil),
+  // window.print() lancé automatiquement ne fait souvent rien : on affiche donc d'abord le document
+  // à l'écran, avec un bouton « Imprimer » qui lance l'impression directement depuis le toucher.
+  if (matchMedia('(pointer: coarse)').matches || navigator.standalone) {
+    openModal({
+      title: 'Aperçu',
+      body: `<div class="print-preview ${cls}">${html}</div>`,
+      foot: `<button class="btn" data-close>Fermer</button><button class="btn btn-primary" id="pp-print">${icon('file')}Imprimer / PDF</button>`,
+      onMount: r => $('#pp-print', r).onclick = () => window.print(),
+    });
+    return;
+  }
   setTimeout(() => window.print(), 60);
 }
 
@@ -3474,10 +3486,7 @@ function exportPdf(D) {
   const mName = id => { const m = D.members.find(x => x.id === id); return m ? fullName(m) : '—'; };
   const pays = D.payments.filter(p => !p.archived), exps = D.expenses.filter(e => !e.archived);
   const who = p => p.member_id ? mName(p.member_id) : (p.notes || 'Hors adhérent');
-  let el = $('#print-root');
-  if (!el) { el = document.createElement('div'); el.id = 'print-root'; document.body.appendChild(el); }
-  el.className = '';
-  el.innerHTML = `
+  printDoc(`
     <h1>${esc(S.settings?.club_name || 'Club')}</h1>
     <p class="muted">Comptabilité${D.season ? ' — saison ' + esc(D.season.label) : ''} · édité le ${new Date().toLocaleDateString('fr-FR', { day: 'numeric', month: 'long', year: 'numeric' })}</p>
     ${bilanHtml(D)}
@@ -3488,8 +3497,7 @@ function exportPdf(D) {
     <h2 class="section-title mt">Détail des dépenses (${exps.length})</h2>
     <table class="table"><thead><tr><th>Date</th><th>Libellé</th><th>Catégorie</th><th>Mode</th><th>Pointé</th><th style="text-align:right">Montant</th></tr></thead><tbody>
       ${exps.slice().sort((a, b) => a.expense_date.localeCompare(b.expense_date)).map(e => `<tr><td>${fmtDate(e.expense_date)}</td><td>${esc(e.label)}</td><td>${esc(e.category || '')}</td><td>${esc(e.method || '')}</td><td>${e.bank_checked ? 'Oui' : ''}</td><td style="text-align:right">${fmtMoney(e.amount)}</td></tr>`).join('')}
-    </tbody></table>`;
-  setTimeout(() => window.print(), 50);
+    </tbody></table>`);
 }
 
 /* =====================================================================

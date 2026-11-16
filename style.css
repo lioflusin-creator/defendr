@@ -443,3 +443,8 @@ a.btn.disabled { opacity: .45; }
   .bilan-signs .sign-box { height: 60px; border-bottom: 1px solid #000; margin-top: 6px; }
 }
 .bilan-signs { display: grid; grid-template-columns: 1fr 1fr; gap: 24px; margin-top: 18px; }
+
+/* Aperçu avant impression (téléphone) */
+.print-preview { font-size: 13px; overflow-x: auto; }
+.print-preview h1 { font-family: var(--display); text-transform: uppercase; margin: 0 0 4px; font-size: 20px; }
+.print-preview .table th, .print-preview .table td { padding: 5px 8px; }
