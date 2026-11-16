@@ -765,3 +765,9 @@ begin
 end $$;
 revoke all on function public.restore_backup(jsonb) from public, anon;
 grant execute on function public.restore_backup(jsonb) to authenticated;
+
+-- =====================================================================
+-- DEFENDR — remise des T-shirts (voir migration-12.sql)
+-- =====================================================================
+alter table public.members
+  add column if not exists tshirt_given_at date;

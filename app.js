@@ -516,6 +516,8 @@ async function viewMembers(view) {
   const paidBy = {};
   (pr?.data || []).filter(p => p.status === 'payé').forEach(p => { paidBy[p.member_id] = (paidBy[p.member_id] || 0) + Number(p.amount); });
   const balance = m => Number(m.fee_amount || 0) - (paidBy[m.id] || 0);
+  // Colonne « T-shirt remis » présente une fois migration-12.sql exécuté
+  const hasTshirtCol = !members.length || 'tshirt_given_at' in members[0];
 
   const filters = [
     { k: 'tous', label: 'Tous', fn: () => true },
@@ -524,6 +526,7 @@ async function viewMembers(view) {
     { k: 'relancer', label: 'À relancer', fn: m => memberIssues(m).length > 0 },
     { k: 'certificat', label: 'Certificat / QSS manquant', fn: m => m.status === 'actif' && !hasHealthDoc(m) },
     { k: 'anniversaires', label: 'Anniversaires du mois', fn: m => isBirthdayMonth(m.birth_date) },
+    ...(hasTshirtCol ? [{ k: 'tshirt', label: 'T-shirt à remettre', fn: m => m.status === 'actif' && !m.tshirt_given_at }] : []),
     { k: 'inactifs', label: 'Inactifs', fn: m => m.status === 'inactif' },
   ];
   if (!filters.find(f => f.k === S.memberFilter)) S.memberFilter = 'tous';
@@ -546,22 +549,37 @@ async function viewMembers(view) {
     const box = $('#m-list');
     if (!rows.length) { box.innerHTML = `<div class="empty">${members.length ? 'Aucun membre ne correspond.' : 'Aucun membre pour l’instant. Ajoutez le premier avec « Nouveau membre ».'}</div>`; return; }
     const statusBadge = m => m.status === 'actif' ? '<span class="badge ok">Actif</span>' : '<span class="badge">Inactif</span>';
+    const tsMode = S.memberFilter === 'tshirt';
+    const tsBtn = m => `<button class="btn btn-sm btn-primary" data-ts="${m.id}">${icon('check')}${esc(m.tshirt_size || 'Taille ?')} · Remis</button>`;
     box.innerHTML = `
-      <div class="table-wrap only-desktop"><table class="table"><thead><tr><th>Nom</th><th>Contact</th><th>Discipline</th><th>Niveau</th><th>Santé</th>${isAdmin() ? '<th>Solde</th>' : ''}<th>Statut</th></tr></thead><tbody>
+      ${tsMode ? '<div class="small muted" style="padding:12px 16px 0">Touchez « Remis » quand vous donnez son T-shirt à un membre : il disparaît de cette liste.</div>' : ''}
+      <div class="table-wrap only-desktop"><table class="table"><thead><tr><th>Nom</th><th>Contact</th><th>Discipline</th><th>Niveau</th><th>Santé</th>${isAdmin() ? '<th>Solde</th>' : ''}<th>Statut</th>${tsMode ? '<th>T-shirt</th>' : ''}</tr></thead><tbody>
         ${rows.map(m => `<tr class="clickable" data-id="${m.id}">
           <td><div class="person"><div class="avatar">${esc(initials(m))}</div><div><div class="name">${esc(fullName(m))}</div>${m.birth_date ? `<div class="meta">${ageOf(m.birth_date)} ans</div>` : ''}</div></div></td>
           <td class="small">${esc(m.phone || '')}<div class="muted">${esc(m.email || '')}</div></td>
           <td>${esc(discName(m.discipline_id))}</td><td>${esc(levelName(m.level_id))}</td>
           <td>${healthBadge(m)}</td>
           ${isAdmin() ? `<td>${balance(m) > 0 ? `<span class="badge danger">${fmtMoney(balance(m))}</span>` : '<span class="badge ok">À jour</span>'}</td>` : ''}
-          <td>${statusBadge(m)}</td></tr>`).join('')}
+          <td>${statusBadge(m)}</td>${tsMode ? `<td>${tsBtn(m)}</td>` : ''}</tr>`).join('')}
       </tbody></table></div>
       <div class="list only-mobile">${rows.map(m => `<div class="list-item" data-id="${m.id}">
           <div class="avatar">${esc(initials(m))}</div>
           <div class="grow"><div style="font-weight:600">${esc(fullName(m))}</div><div class="small muted">${esc(discName(m.discipline_id))} · ${esc(levelName(m.level_id))}</div></div>
-          <div class="right">${m.status !== 'actif' ? statusBadge(m) : (!hasHealthDoc(m) ? healthBadge(m, true) : '')}${isAdmin() && balance(m) > 0 ? `<span class="badge danger">${fmtMoney(balance(m))}</span>` : ''}</div>
+          <div class="right">${tsMode ? tsBtn(m) : `${m.status !== 'actif' ? statusBadge(m) : (!hasHealthDoc(m) ? healthBadge(m, true) : '')}${isAdmin() && balance(m) > 0 ? `<span class="badge danger">${fmtMoney(balance(m))}</span>` : ''}`}</div>
         </div>`).join('')}</div>`;
     $$('[data-id]', box).forEach(r => r.onclick = () => go('/membres/' + r.dataset.id));
+    $$('[data-ts]', box).forEach(b => b.onclick = async e => {
+      e.stopPropagation();
+      const m = members.find(x => x.id === b.dataset.ts);
+      b.disabled = true;
+      const day = isoDay(new Date());
+      const { error } = await sb.from('members').update({ tshirt_given_at: day }).eq('id', m.id);
+      if (error) { b.disabled = false; return fail(error); }
+      m.tshirt_given_at = day;
+      toast(`T-shirt remis à ${fullName(m)}`);
+      $$('[data-f]', view).forEach(c => { const f = filters.find(x => x.k === c.dataset.f); if (f) $('.n', c).textContent = members.filter(f.fn).length; });
+      draw();
+    });
   };
   draw();
   $('#m-search').oninput = e => { S.memberSearch = e.target.value; draw(); };
@@ -800,7 +818,7 @@ async function viewMember(view, id) {
       </dl></div>
       <div class="card card-pad"><h2>Inscription</h2><dl class="kv">
         <dt>Date d’inscription</dt><dd>${fmtDate(m.registration_date)}</dd><dt>Rôle</dt><dd>${esc(m.member_role || '—')}</dd>
-        <dt>T-shirt</dt><dd>${esc(m.tshirt_size || '—')}</dd><dt>Cotisation</dt><dd>${esc(m.fee_type || '—')}${m.fee_amount != null ? ' · ' + fmtMoney(m.fee_amount) : ''}</dd>
+        <dt>T-shirt</dt><dd>${esc(m.tshirt_size || '—')}${'tshirt_given_at' in m ? ` · ${m.tshirt_given_at ? `<span class="badge ok">Remis le ${fmtDate(m.tshirt_given_at)}</span>` : '<span class="badge warn">Pas encore remis</span>'} <button class="btn btn-sm" id="ts-toggle" style="margin-left:4px">${m.tshirt_given_at ? 'Annuler' : 'Marquer remis'}</button>` : ''}</dd><dt>Cotisation</dt><dd>${esc(m.fee_type || '—')}${m.fee_amount != null ? ' · ' + fmtMoney(m.fee_amount) : ''}</dd>
         <dt>Connu le club par</dt><dd>${esc(m.how_found || '—')}</dd>
         <dt>Autre sport de défense</dt><dd>${m.other_defense_sport ? 'Oui' + (m.other_defense_sport_details ? ' — ' + esc(m.other_defense_sport_details) : '') : 'Non'}</dd>
       </dl></div>
@@ -835,6 +853,11 @@ async function viewMember(view, id) {
   $('#edit').onclick = () => memberForm(m, () => route());
   $$('#add-pay, #add-pay-top', view).forEach(b => b.onclick = () => paymentForm(null, { member_id: m.id, amount: due > 0 ? due : m.fee_amount }));
   $('#attest') && ($('#attest').onclick = () => printAttestation(m, seasonPays.filter(p => p.status === 'payé' && !p.archived), season));
+  $('#ts-toggle') && ($('#ts-toggle').onclick = async () => {
+    const { error } = await sb.from('members').update({ tshirt_given_at: m.tshirt_given_at ? null : isoDay(new Date()) }).eq('id', m.id);
+    if (error) return fail(error);
+    toast(m.tshirt_given_at ? 'Remise du T-shirt annulée' : 'T-shirt noté comme remis'); route();
+  });
   $$('[data-pay]', view).forEach(r => r.onclick = () => paymentForm(seasonPays.find(p => p.id === r.dataset.pay)));
   $('#del').onclick = async () => {
     if (!await confirmBox('Supprimer le membre', `Supprimer définitivement <strong>${esc(fullName(m))}</strong> ? Ses présences seront aussi supprimées. Pour un membre qui arrête, préférez le statut « Inactif ».`)) return;
@@ -1258,7 +1281,7 @@ async function registrationStats(box) {
 const AUDIT_TABLES = { stages: 'Stages', members: 'Membres', payments: 'Paiements', expenses: 'Dépenses', prospects: 'Prospects', courses: 'Séances', seasons: 'Saisons', club_settings: 'Paramètres', restauration: 'Restauration' };
 const AUDIT_FIELDS = { first_name: 'Prénom', last_name: 'Nom', phone: 'Téléphone', email: 'E-mail', address: 'Adresse', birth_date: 'Date de naissance', status: 'Statut', level_id: 'Niveau', discipline_id: 'Discipline',
   fee_type: 'Cotisation', fee_amount: 'Montant cotisation', amount: 'Montant', payment_type: 'Type', payment_date: 'Date', method: 'Moyen de paiement', due_date: 'Encaissement prévu', bank_checked: 'Pointé en banque',
-  medical_certificate: 'Certificat médical', qss: 'Questionnaire de santé', registration_date: 'Date d’inscription', member_role: 'Rôle', notes: 'Notes', label: 'Libellé', category: 'Catégorie', expense_date: 'Date',
+  tshirt_size: 'Taille T-shirt', tshirt_given_at: 'T-shirt remis le', medical_certificate: 'Certificat médical', qss: 'Questionnaire de santé', registration_date: 'Date d’inscription', member_role: 'Rôle', notes: 'Notes', label: 'Libellé', category: 'Catégorie', expense_date: 'Date',
   course_date: 'Date', title: 'Titre', start_time: 'Début', end_time: 'Fin', room: 'Salle', instructor: 'Encadrant', is_active: 'Active', opening_balance: 'Solde de départ', archived: 'Archivé',
   trial_date: 'Date d’essai', trial_present: 'Venu(e) à l’essai', invited_at: 'Invité(e) le', stage_date: 'Date du stage', place: 'Lieu', price: 'Tarif', audience: 'Public', description: 'Programme', trial_course_id: 'Séance d’essai', converted_at: 'Inscrit(e) le', source: 'Origine', renewal_sent_at: 'Lien de réinscription envoyé', renewed_season_id: 'Réinscrit(e) pour la saison', member_id: 'Fiche membre',
   emergency_contact: 'Contact d’urgence', emergency_phone: 'Tél. urgence', guardian_name: 'Responsable légal', guardian_phone: 'Tél. responsable', consent_image: 'Droit à l’image', club_documents: 'Documents du club' };
@@ -2605,6 +2628,7 @@ async function exportMembersXlsx(rows, label, balance, btn) {
         'Discipline': m.discipline_id ? discName(m.discipline_id) : '', 'Niveau': m.level_id ? levelName(m.level_id) : '',
         'Statut': m.status === 'actif' ? 'Actif' : 'Inactif', 'Date d’inscription': d(m.registration_date),
         'Taille T-shirt': m.tshirt_size || '',
+        'T-shirt remis le': m.tshirt_given_at ? fmtDate(m.tshirt_given_at) : '',
         'Certificat médical / QSS': m.medical_certificate ? 'Certificat' : m.qss ? 'QSS' : 'Manquant',
         'Droit à l’image': yn(m.consent_image),
         'Contact d’urgence': m.emergency_contact || '', 'Tél. urgence': m.emergency_phone || '',
@@ -2638,8 +2662,8 @@ function printTshirtList(rows, label) {
     <table class="table" style="width:auto"><thead><tr>${keys.map(k => `<th style="text-align:center">${esc(k)}</th>`).join('')}<th style="text-align:center">Total</th></tr></thead>
       <tbody><tr>${keys.map(k => `<td style="text-align:center">${count[k]}</td>`).join('')}<td style="text-align:center"><strong>${rows.length}</strong></td></tr></tbody></table>
     <h2 class="section-title mt">Détail</h2>
-    <table class="table"><thead><tr><th style="width:28px">#</th><th>Nom</th><th>Prénom</th><th>Taille T-shirt</th><th style="width:60px">Remis</th></tr></thead><tbody>
-      ${sorted.map((m, i) => `<tr><td>${i + 1}</td><td>${esc((m.last_name || '').toUpperCase())}</td><td>${esc(m.first_name || '')}</td><td><strong>${esc(m.tshirt_size || '—')}</strong></td><td>☐</td></tr>`).join('')}
+    <table class="table"><thead><tr><th style="width:28px">#</th><th>Nom</th><th>Prénom</th><th>Taille T-shirt</th><th style="width:90px">Remis</th></tr></thead><tbody>
+      ${sorted.map((m, i) => `<tr><td>${i + 1}</td><td>${esc((m.last_name || '').toUpperCase())}</td><td>${esc(m.first_name || '')}</td><td><strong>${esc(m.tshirt_size || '—')}</strong></td><td>${m.tshirt_given_at ? '☑ ' + fmtDate(m.tshirt_given_at) : '☐'}</td></tr>`).join('')}
     </tbody></table>`);
 }
 

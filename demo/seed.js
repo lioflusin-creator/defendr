@@ -77,7 +77,7 @@ export function buildDemoData(userId) {
       id: id('member'), first_name: first, last_name: last, email: `${first.toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g, '')}.${last.toLowerCase()}@exemple.fr`,
       phone: `06 00 00 ${pad(10 + i)} ${pad(20 + i)}`, address: `${10 + i} rue des Exemples, 00000 Ville-Démo`, birth_date: `${year}-${pad(month)}-${pad(day)}`, gender,
       discipline_id: minor ? sda : sd, level_id: L[lvl].id, status: i === 21 ? 'inactif' : 'actif', member_role: i === 9 ? 'animateur' : 'membre',
-      registration_date: iso(regDate), tshirt_size: pick(sizes), fee_type, fee_amount,
+      registration_date: iso(regDate), tshirt_size: pick(sizes), tshirt_given_at: i % 3 ? iso(addDays(regDate, 7)) : null, fee_type, fee_amount,
       emergency_contact: minor ? `Parent de ${first}` : pick(['Conjoint(e)', 'Mère', 'Père', 'Ami(e)', 'Sœur', 'Frère']), emergency_phone: `06 00 00 ${pad(50 + i)} ${pad(60 + i)}`,
       medical_certificate: cert, qss, medical_waiver: waiver, medical_waiver_validity: waiver ? iso(addDays(now, i % 2 ? 12 : 40)) : null,
       how_found: pick(howFound), other_defense_sport: rnd() < 0.3, other_defense_sport_details: null,
