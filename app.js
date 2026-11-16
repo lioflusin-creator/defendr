@@ -241,6 +241,8 @@ async function loadRefs() {
   ]);
   for (const r of [st, di, le, se]) if (r.error) throw r.error;
   S.settings = st.data; S.disciplines = di.data; S.levels = le.data; S.seasons = se.data;
+  // Sauvegarde automatique mensuelle (absente tant que migration-13.sql n'est pas exécuté)
+  if (isAdmin()) { const { data, error } = await sb.from('backup_settings').select('*').eq('id', 1).maybeSingle(); S.backupAuto = error ? null : (data || {}); }
 }
 
 async function boot() {
@@ -1584,6 +1586,7 @@ async function viewSettings(view) {
         <p class="small muted">Un fichier Excel avec toutes les données : membres, paiements, dépenses, séances, présences, planification et paramètres. Conseillé une fois par mois, à garder en lieu sûr (il contient des données personnelles et médicales).</p>
         <div class="small mb">${lastBackupText()}</div>
         <button class="btn btn-primary" id="backup">${icon('file')}Télécharger les données</button>
+        <div id="auto-backup">${autoBackupHtml()}</div>
         <div class="section-title mt" style="font-size:13px">2. Le logiciel</div>
         <p class="small muted">Un fichier .zip avec tout le logiciel : les écrans, le fonctionnement, l’icône et la structure de la base de données. Il ne contient aucune donnée d’adhérent. Chaque version est aussi conservée automatiquement sur GitHub.</p>
         ${GITHUB_REPO ? `<div class="row wrap" style="gap:8px"><a class="btn" href="${GITHUB_REPO}/archive/refs/heads/main.zip" download>${icon('file')}Télécharger le logiciel</a>
@@ -1591,7 +1594,7 @@ async function viewSettings(view) {
         <p class="small muted mt">Avec ces deux fichiers, le club peut tout reconstruire si besoin.</p>
         ${isPresident() ? `<div class="section-title mt" style="font-size:13px">3. Restaurer</div>
         <p class="small muted">Remet les données du club telles qu’elles étaient dans un fichier de sauvegarde. Réservé au président.</p>
-        <label class="btn btn-danger" style="cursor:pointer">${icon('up')}Restaurer depuis une sauvegarde<input type="file" id="restore-file" accept=".xlsx" hidden></label>` : ''}
+        <label class="btn btn-danger" style="cursor:pointer">${icon('up')}Restaurer depuis une sauvegarde<input type="file" id="restore-file" accept=".xlsx,.json,application/json" hidden></label>` : ''}
       </div>
 
 
@@ -1638,6 +1641,7 @@ async function viewSettings(view) {
       </div>
     </div>`;
   $('#backup').onclick = () => downloadBackup($('#backup'));
+  bindAutoBackup(view);
   bindAdac(view);
   $('#restore-file') && ($('#restore-file').onchange = e => { const f = e.target.files[0]; e.target.value = ''; if (f) restoreFromFile(f); });
 
@@ -2756,7 +2760,11 @@ async function printAgReport({ sessions, rows, avgPresent, avgRate, cats }) {
    Sauvegarde Excel
    ===================================================================== */
 const BACKUP_KEY = window.DEFENDR_DEMO ? 'defendr-demo-derniere-sauvegarde' : 'defendr-derniere-sauvegarde';
-const lastBackup = () => { try { return localStorage.getItem(BACKUP_KEY); } catch { return null; } };
+const lastBackup = () => {
+  let local = null; try { local = localStorage.getItem(BACKUP_KEY); } catch {}
+  const auto = S.backupAuto?.last_auto_backup_at || null;
+  return [local, auto].filter(Boolean).sort().pop() || null;
+};
 function lastBackupText() {
   const d = lastBackup();
   if (!d) return '<span class="badge warn">Aucune sauvegarde téléchargée depuis cet appareil</span>';
@@ -2821,11 +2829,53 @@ async function downloadBackup(btn) {
   finally { if (btn) { btn.disabled = false; btn.innerHTML = label; } }
 }
 
+/* ---------- Sauvegarde automatique mensuelle (script Google defendr-sauvegarde.gs) ---------- */
+function autoBackupHtml() {
+  if (window.DEFENDR_DEMO) return '';
+  const b = S.backupAuto;
+  if (!b) return `<div class="section-title mt" style="font-size:13px">Sauvegarde automatique</div><div class="alert error">Pour l’activer, exécutez une fois le fichier <strong>migration-13.sql</strong> dans Supabase → Éditeur SQL.</div>`;
+  const last = b.last_auto_backup_at;
+  const late = last && Date.now() - new Date(last) > 35 * 86400000;
+  return `<div class="section-title mt" style="font-size:13px">Sauvegarde automatique</div>
+    <p class="small muted">Chaque mois, une copie des données est rangée toute seule dans votre Google Drive (dossier « Defendr – sauvegardes »). Rien à faire une fois installée.</p>
+    <div class="small mb">${last ? `<span class="badge ${late ? 'warn' : 'ok'}">Dernière sauvegarde automatique : ${fmtDate(last.slice(0, 10))}${late ? ' · en retard, vérifiez le script' : ''}</span>` : '<span class="badge warn">Pas encore installée</span>'}</div>
+    <details ${last ? '' : 'open'}><summary class="small" style="cursor:pointer;font-weight:600">Installation (une seule fois, depuis un ordinateur)</summary>
+      <ol class="small" style="padding-left:18px;margin:8px 0">
+        <li>Cliquez sur <strong>Copier le script</strong> ci-dessous.</li>
+        <li>Ouvrez <a href="https://script.google.com/home/projects/create" target="_blank" rel="noopener">script.google.com</a> avec le compte Google du club (un nouveau projet s’ouvre). Effacez le contenu, collez le script et cliquez sur l’icône <strong>Enregistrer</strong>.</li>
+        <li>En haut, choisissez la fonction <strong>installer</strong> puis cliquez sur <strong>▶ Exécuter</strong>. Autorisez l’accès (si Google affiche « Application non validée » : <strong>Paramètres avancés → Accéder au projet</strong>).</li>
+        <li>C’est fini : une première sauvegarde est faite tout de suite, puis le 1<sup>er</sup> de chaque mois. Revenez sur cette page pour voir la date.</li>
+      </ol>
+      <button type="button" class="btn btn-sm" id="ab-copy">${icon('copy')}Copier le script</button>
+      <p class="small muted mt">Le script contient une clé qui permet seulement de lire une copie des données : ne le partagez pas. Pour restaurer, choisissez le fichier .json avec <strong>Restaurer depuis une sauvegarde</strong>.</p>
+    </details>`;
+}
+async function autoBackupEnsureKey() {
+  if (S.backupAuto?.backup_key) return S.backupAuto.backup_key;
+  const key = [...crypto.getRandomValues(new Uint8Array(24))].map(b => b.toString(16).padStart(2, '0')).join('');
+  const { error } = await sb.from('backup_settings').upsert({ id: 1, backup_key: key });
+  if (error) { fail(error); return null; }
+  S.backupAuto = { ...(S.backupAuto || {}), backup_key: key }; return key;
+}
+function bindAutoBackup(view) {
+  const btn = $('#ab-copy', view); if (!btn) return;
+  btn.onclick = async () => {
+    const key = await autoBackupEnsureKey(); if (!key) return;
+    let code;
+    try {
+      const r = await fetch(new URL('defendr-sauvegarde.gs', import.meta.url), { cache: 'no-store' }); if (!r.ok) throw 0;
+      code = (await r.text()).replace('__SUPABASE_URL__', SUPABASE_URL).replace('__SUPABASE_ANON_KEY__', SUPABASE_ANON_KEY).replace('__CLE_SAUVEGARDE__', key);
+    } catch { return toast('Impossible de récupérer le script.', 'error'); }
+    try { await navigator.clipboard.writeText(code); toast('Script copié : collez-le dans script.google.com'); }
+    catch { openModal({ title: 'Script de sauvegarde', body: `<p class="small muted">Sélectionnez tout le texte et copiez-le.</p><textarea class="input" style="min-height:300px;font-family:monospace;font-size:12px" readonly>${esc(code)}</textarea>`, foot: '<button class="btn btn-primary" data-close>Fermer</button>' }); }
+  };
+}
+
 /* ---------- Restauration ---------- */
 const BOOL_COLS = new Set(['trial_present', 'medical_certificate', 'qss', 'medical_waiver', 'other_defense_sport', 'consent_image', 'consent_data', 'rules_read', 'rules_accepted', 'insurance_informed', 'parental_authorization', 'present', 'done', 'bank_checked', 'archived', 'is_active']);
 const ARRAY_COLS = new Set(['revenue_types', 'expense_categories', 'rooms', 'plan_sections']);
 const JSON_COLS = new Set(['club_documents', 'health_files']);
-const DATE_COLS = new Set(['stage_date', 'trial_date', 'birth_date', 'registration_date', 'medical_waiver_validity', 'course_date', 'payment_date', 'due_date', 'expense_date', 'changed_on']);
+const DATE_COLS = new Set(['tshirt_given_at', 'stage_date', 'trial_date', 'birth_date', 'registration_date', 'medical_waiver_validity', 'course_date', 'payment_date', 'due_date', 'expense_date', 'changed_on']);
 const TIME_COLS = new Set(['start_time', 'end_time', 'default_start_time', 'default_end_time']);
 const PHONE_COLS = new Set(['phone', 'emergency_phone', 'guardian_phone', 'whatsapp_number']);
 
@@ -2845,6 +2895,14 @@ function normalizeCell(k, v) {
 }
 
 async function readBackupFile(file) {
+  if (/\.json$/i.test(file.name) || file.type === 'application/json') {
+    let data; try { data = JSON.parse(await file.text()); } catch { throw new Error('Fichier illisible.'); }
+    if (data?.format !== 'defendr-sauvegarde' || !Array.isArray(data.tables?.members)) throw new Error('Ce fichier n’est pas une sauvegarde Defendr.');
+    const payload = {}, counts = {};
+    for (const [sheet, table] of Object.entries(BACKUP_SHEETS)) if (Array.isArray(data.tables[table])) { payload[table] = data.tables[table]; counts[sheet] = payload[table].length; }
+    if (payload.members.some(m => !m.id || !m.first_name)) throw new Error('Sauvegarde incomplète : chaque membre doit avoir un id et un prénom.');
+    return { payload, counts, missing: Object.keys(BACKUP_SHEETS).filter(s => !(s in counts)) };
+  }
   const XLSX = await import(XLSX_URL);
   const wb = XLSX.read(await file.arrayBuffer(), { cellDates: true });
   if (!wb.SheetNames.includes('Membres')) throw new Error('Ce fichier n’est pas une sauvegarde Defendr (onglet « Membres » introuvable).');

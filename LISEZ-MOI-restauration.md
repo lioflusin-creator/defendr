@@ -13,4 +13,4 @@ Ce dossier contient tout le logiciel de gestion du club. Il ne contient aucune d
 2. Mettre l'adresse et la clé publique du nouveau projet, ainsi que l'adresse du site (`SITE`), dans `config.js`.
 3. Publier le dossier sur un hébergement de pages web (par exemple GitHub Pages).
 4. Créer son compte dans l'application (le premier compte devient président).
-5. Dans Paramètres → Sauvegarde, utiliser « Restaurer depuis une sauvegarde » avec le dernier fichier Excel.
+5. Dans Paramètres → Sauvegarde, utiliser « Restaurer depuis une sauvegarde » avec le dernier fichier Excel, ou le dernier fichier `.json` du dossier « Defendr – sauvegardes » de Google Drive (sauvegarde automatique mensuelle).
