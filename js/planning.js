@@ -1,5 +1,5 @@
 // Defendr — Planning et appel des présences
-import { $, $$, DAYS, MONTHS, S, activeSeason, addDays, closeModal, confirmBox, discName, esc, fail, fullName, hhmm, icon, initials, isAdmin, isoDay, levelName, longDay, mondayOf, openModal, parseDay, readForm, sb, toast } from './core.js';
+import { $, $$, DAYS, MONTHS, S, activeSeason, addDays, ageOf, closeModal, confirmBox, discName, esc, fail, fullName, hhmm, icon, initials, isAdmin, isoDay, levelName, longDay, mondayOf, openModal, parseDay, readForm, sb, toast } from './core.js';
 import { currentPath, go, head, route } from './shell.js';
 import { trialRow } from './prospects.js';
 
@@ -333,4 +333,37 @@ export async function courseForm(c, defaults = {}) {
     };
     },
   });
+}
+
+/* Décrocheurs : membres actifs qui ne sont pas venus depuis au moins 3 semaines, alors que
+   l'appel a été fait à au moins 3 séances depuis (pour ne signaler personne pendant les vacances). */
+export const DROPOUT_DAYS = 21, DROPOUT_SESSIONS = 3;
+export async function dropoutInfo(members) {
+  const today = isoDay(new Date()), since = isoDay(addDays(new Date(), -120));
+  const { data: cs, error } = await sb.from('courses').select('id, course_date, attendances(count)').gte('course_date', since).lte('course_date', today);
+  if (error) throw error;
+  const sessions = cs.filter(c => (c.attendances?.[0]?.count ?? 0) > 0);
+  const out = {};
+  if (!sessions.length) return out;
+  const { data: at, error: e2 } = await sb.from('attendances').select('member_id, course_id').eq('present', true).in('course_id', sessions.map(c => c.id));
+  if (e2) throw e2;
+  const dateOf = Object.fromEntries(sessions.map(c => [c.id, c.course_date]));
+  const last = {};
+  at.forEach(a => { const d = dateOf[a.course_id]; if (d && (!last[a.member_id] || d > last[a.member_id])) last[a.member_id] = d; });
+  for (const m of members) {
+    if (m.status !== 'actif') continue;
+    const lastSeen = last[m.id] || null;
+    const ref = [lastSeen, m.registration_date, since].filter(Boolean).sort().pop();
+    const missed = sessions.filter(c => c.course_date > ref).length;
+    const days = Math.floor((parseDay(today) - parseDay(ref)) / 86400000);
+    if (days >= DROPOUT_DAYS && missed >= DROPOUT_SESSIONS) out[m.id] = { lastSeen, days, missed };
+  }
+  return out;
+}
+export function dropoutText(m) {
+  const minor = (ageOf(m.birth_date) ?? 99) < 18 && m.guardian_phone;
+  const club = S.settings?.club_name || 'club';
+  return minor
+    ? `Bonjour ${(m.guardian_name || '').split(' ')[0] || ''} ! 👋\n\nOn n’a pas vu ${m.first_name} au ${club} depuis un moment, tout va bien ? 🙂\nOn serait contents de le/la revoir sur le tatami. N’hésitez pas à me dire si quelque chose l’empêche de venir.\n\nÀ bientôt ! 👊`
+    : `Bonjour ${m.first_name} ! 👋\n\nOn ne t’a pas vu(e) au ${club} depuis un moment, tout va bien ? 🙂\nOn serait contents de te revoir sur le tatami. N’hésite pas à me dire si quelque chose t’empêche de venir.\n\nÀ bientôt ! 👊`;
 }

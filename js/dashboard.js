@@ -4,6 +4,7 @@ import { head, route } from './shell.js';
 import { openRegistrations } from './inscriptions.js';
 import { dashProspects } from './prospects.js';
 import { lastBackup } from './backup.js';
+import { dropoutInfo } from './planning.js';
 import { bindWeeklyPoll, isSummerBreak, waUrl, weeklyPollCard, weeklyPollDays } from './whatsapp.js';
 
 /* =====================================================================
@@ -101,7 +102,7 @@ export async function viewDashboard(view) {
   // Le dimanche : les questions du sondage de la semaine, directement sur l'accueil (hors vacances d'été)
   const sundayPoll = new Date().getDay() === 0 && !isSummerBreak(weeklyPollDays()) ? weeklyPollDays() : null;
   view.innerHTML = head('Tableau de bord', `Vue d'ensemble de votre club${season ? ' · saison ' + esc(season.label) : ''}`) + `
-    <div id="dash-regs"></div><div id="dash-prospects"></div>
+    <div id="dash-regs"></div><div id="dash-prospects"></div><div id="dash-dropouts"></div>
     ${sundayPoll ? weeklyPollCard(sundayPoll, true) : ''}
     ${isAdmin() && (!lastBackup() || Date.now() - new Date(lastBackup()) > 31 * 86400000) ? `<div class="alert info">Pensez à télécharger une sauvegarde de vos données : <a href="#/parametres">Paramètres → Sauvegarde</a>.</div>` : ''}
     ${!season && isAdmin() ? `<div class="alert info">Aucune saison active. <a href="#/parametres">Créez la saison en cours dans les Paramètres</a> pour suivre la comptabilité par saison.</div>` : ''}
@@ -134,6 +135,12 @@ export async function viewDashboard(view) {
     $('#dash-open-regs') && ($('#dash-open-regs').onclick = openRegistrations);
   });
   dashProspects();
+  dropoutInfo(members).then(d => {
+    const n = Object.keys(d).length, box = $('#dash-dropouts');
+    if (!n || !box) return;
+    box.innerHTML = `<div class="alert info row between wrap" style="gap:8px"><span>${n} membre${n > 1 ? 's' : ''} absent${n > 1 ? 's' : ''} depuis 3 semaines ou plus : un petit message peut éviter un abandon.</span><a class="btn btn-sm" href="#/membres" id="dash-ab">Voir</a></div>`;
+    $('#dash-ab').onclick = () => { S.memberFilter = 'absents'; };
+  }).catch(e => console.error(e));
   if (sundayPoll) bindWeeklyPoll(view, sundayPoll);
   $$('[data-deposit]', view).forEach(b => b.onclick = async () => {
     b.disabled = true;

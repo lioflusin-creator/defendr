@@ -2,8 +2,9 @@
 import { $, $$, S, activeSeason, ageOf, closeModal, confirmBox, discName, esc, fail, fmtDate, fmtDay, fmtMoney, fullName, icon, initials, isAdmin, isBirthdayMonth, isoDay, levelName, openModal, readForm, sb, toast, waLink } from './core.js';
 import { go, head, route } from './shell.js';
 import { hasHealthDoc, healthBadge, memberIssues, reminderLink } from './dashboard.js';
-import { bindHealthFiles, healthFileButtons, openRegistrations } from './inscriptions.js';
-import { memberAttendance } from './planning.js';
+import { bindHealthFiles, healthFileButtons, openRegistrations, renewalPhone } from './inscriptions.js';
+import { dropoutInfo, dropoutText, memberAttendance } from './planning.js';
+import { waUrl } from './whatsapp.js';
 import { gradeEntryForm, nextLevel, promoteForm } from './grades.js';
 import { exportMembersXlsx, printAttestation, printTshirtList } from './print.js';
 import { METHODS, paymentForm } from './compta.js';
@@ -20,6 +21,8 @@ export async function viewMembers(view) {
   if (mr.error) throw mr.error;
   if (pr?.error) throw pr.error;
   const members = mr.data;
+  // Décrocheurs (absents depuis 3 semaines) : calculé à part, la liste s'affiche sans l'attendre
+  let dropouts = null;
   const paidBy = {};
   (pr?.data || []).filter(p => p.status === 'payé').forEach(p => { paidBy[p.member_id] = (paidBy[p.member_id] || 0) + Number(p.amount); });
   const balance = m => Number(m.fee_amount || 0) - (paidBy[m.id] || 0);
@@ -33,6 +36,7 @@ export async function viewMembers(view) {
     { k: 'relancer', label: 'À relancer', fn: m => memberIssues(m).length > 0 },
     { k: 'certificat', label: 'Certificat / QSS manquant', fn: m => m.status === 'actif' && !hasHealthDoc(m) },
     { k: 'anniversaires', label: 'Anniversaires du mois', fn: m => isBirthdayMonth(m.birth_date) },
+    { k: 'absents', label: 'Absents depuis 3 semaines', fn: m => !!dropouts?.[m.id] },
     ...(hasTshirtCol ? [{ k: 'tshirt', label: 'T-shirt à remettre', fn: m => m.status === 'actif' && !m.tshirt_given_at }] : []),
     { k: 'inactifs', label: 'Inactifs', fn: m => m.status === 'inactif' },
   ];
@@ -54,27 +58,33 @@ export async function viewMembers(view) {
     const rows = members.filter(f.fn).filter(m => !q || [fullName(m), m.email, m.phone].join(' ').toLowerCase().normalize('NFD').replace(/\p{Diacritic}/gu, '').includes(q));
     shownRows = rows;
     const box = $('#m-list');
+    if (S.memberFilter === 'absents' && !dropouts) { box.innerHTML = '<div class="empty">Calcul des présences…</div>'; return; }
     if (!rows.length) { box.innerHTML = `<div class="empty">${members.length ? 'Aucun membre ne correspond.' : 'Aucun membre pour l’instant. Ajoutez le premier avec « Nouveau membre ».'}</div>`; return; }
     const statusBadge = m => m.status === 'actif' ? '<span class="badge ok">Actif</span>' : '<span class="badge">Inactif</span>';
     const tsMode = S.memberFilter === 'tshirt';
+    const abMode = S.memberFilter === 'absents';
+    const abInfo = m => { const d = dropouts?.[m.id]; return d ? (d.lastSeen ? `Dernière venue le ${fmtDate(d.lastSeen)}` : 'Pas venu(e) depuis plus de 4 mois') + ` · ${d.missed} séance${d.missed > 1 ? 's' : ''} manquée${d.missed > 1 ? 's' : ''}` : ''; };
+    const abBtn = m => { const u = waUrl(renewalPhone(m), dropoutText(m)); return u && renewalPhone(m) ? `<a class="btn btn-sm btn-primary" data-ab href="${esc(u)}" target="_blank" rel="noopener">${icon('chat')}Relancer</a>` : '<span class="small muted">Pas de numéro</span>'; };
     const tsBtn = m => `<button class="btn btn-sm btn-primary" data-ts="${m.id}">${icon('check')}${esc(m.tshirt_size || 'Taille ?')} · Remis</button>`;
     box.innerHTML = `
       ${tsMode ? '<div class="small muted" style="padding:12px 16px 0">Touchez « Remis » quand vous donnez son T-shirt à un membre : il disparaît de cette liste.</div>' : ''}
-      <div class="table-wrap only-desktop"><table class="table"><thead><tr><th>Nom</th><th>Contact</th><th>Discipline</th><th>Niveau</th><th>Santé</th>${isAdmin() ? '<th>Solde</th>' : ''}<th>Statut</th>${tsMode ? '<th>T-shirt</th>' : ''}</tr></thead><tbody>
+      ${abMode ? '<div class="small muted" style="padding:12px 16px 0">Membres actifs pas venus depuis au moins 3 semaines, alors que l’appel a été fait à 3 séances ou plus depuis. « Relancer » ouvre WhatsApp avec un message prêt (au responsable légal pour un mineur).</div>' : ''}
+      <div class="table-wrap only-desktop"><table class="table"><thead><tr><th>Nom</th><th>Contact</th><th>Discipline</th><th>Niveau</th><th>Santé</th>${isAdmin() ? '<th>Solde</th>' : ''}<th>Statut</th>${tsMode ? '<th>T-shirt</th>' : ''}${abMode ? '<th>Absence</th>' : ''}</tr></thead><tbody>
         ${rows.map(m => `<tr class="clickable" data-id="${m.id}">
           <td><div class="person"><div class="avatar">${esc(initials(m))}</div><div><div class="name">${esc(fullName(m))}</div>${m.birth_date ? `<div class="meta">${ageOf(m.birth_date)} ans</div>` : ''}</div></div></td>
           <td class="small">${esc(m.phone || '')}<div class="muted">${esc(m.email || '')}</div></td>
           <td>${esc(discName(m.discipline_id))}</td><td>${esc(levelName(m.level_id))}</td>
           <td>${healthBadge(m)}</td>
           ${isAdmin() ? `<td>${balance(m) > 0 ? `<span class="badge danger">${fmtMoney(balance(m))}</span>` : '<span class="badge ok">À jour</span>'}</td>` : ''}
-          <td>${statusBadge(m)}</td>${tsMode ? `<td>${tsBtn(m)}</td>` : ''}</tr>`).join('')}
+          <td>${statusBadge(m)}</td>${tsMode ? `<td>${tsBtn(m)}</td>` : ''}${abMode ? `<td><div class="small muted mb">${abInfo(m)}</div>${abBtn(m)}</td>` : ''}</tr>`).join('')}
       </tbody></table></div>
       <div class="list only-mobile">${rows.map(m => `<div class="list-item" data-id="${m.id}">
           <div class="avatar">${esc(initials(m))}</div>
-          <div class="grow"><div style="font-weight:600">${esc(fullName(m))}</div><div class="small muted">${esc(discName(m.discipline_id))} · ${esc(levelName(m.level_id))}</div></div>
-          <div class="right">${tsMode ? tsBtn(m) : `${m.status !== 'actif' ? statusBadge(m) : (!hasHealthDoc(m) ? healthBadge(m, true) : '')}${isAdmin() && balance(m) > 0 ? `<span class="badge danger">${fmtMoney(balance(m))}</span>` : ''}`}</div>
+          <div class="grow"><div style="font-weight:600">${esc(fullName(m))}</div><div class="small muted">${abMode ? abInfo(m) : `${esc(discName(m.discipline_id))} · ${esc(levelName(m.level_id))}`}</div></div>
+          <div class="right">${abMode ? abBtn(m) : tsMode ? tsBtn(m) : `${m.status !== 'actif' ? statusBadge(m) : (!hasHealthDoc(m) ? healthBadge(m, true) : '')}${isAdmin() && balance(m) > 0 ? `<span class="badge danger">${fmtMoney(balance(m))}</span>` : ''}`}</div>
         </div>`).join('')}</div>`;
     $$('[data-id]', box).forEach(r => r.onclick = () => go('/membres/' + r.dataset.id));
+    $$('[data-ab]', box).forEach(a => a.addEventListener('click', e => e.stopPropagation()));
     $$('[data-ts]', box).forEach(b => b.onclick = async e => {
       e.stopPropagation();
       const m = members.find(x => x.id === b.dataset.ts);
@@ -89,6 +99,12 @@ export async function viewMembers(view) {
     });
   };
   draw();
+  dropoutInfo(members).then(d => {
+    dropouts = d;
+    if (!view.isConnected) return;
+    $$('[data-f]', view).forEach(c => { const x = filters.find(y => y.k === c.dataset.f); if (x) $('.n', c).textContent = members.filter(x.fn).length; });
+    if (S.memberFilter === 'absents') draw();
+  }).catch(e => console.error(e));
   $('#m-search').oninput = e => { S.memberSearch = e.target.value; draw(); };
   $$('[data-f]', view).forEach(b => b.onclick = () => { S.memberFilter = b.dataset.f; $$('[data-f]', view).forEach(x => x.classList.toggle('active', x === b)); draw(); });
   $('#new-member').onclick = () => memberForm(null, id => go('/membres/' + id));
