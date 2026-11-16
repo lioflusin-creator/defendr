@@ -2,7 +2,8 @@
 import { $, $$, S, activeSeason, ageOf, discName, esc, fail, fmtDate, fmtMoney, fullName, icon, isoDay, levelName, openModal, sb, toast, saveFile, XLSX_MIME } from './core.js';
 import { seasonStart } from './inscriptions.js';
 import { XLSX_URL } from './backup.js';
-import { bilanHtml, loadAccounting } from './compta.js';
+import { bilanHtml, bilanPrintHtml, loadAccounting, seasonBilan } from './compta.js';
+import { attendanceSummary } from './stats.js';
 
 /* =====================================================================
    Impression (attestations, rapports)
@@ -133,7 +134,8 @@ export function printAttestation(m, pays, season) {
     </div>`, 'print-attest');
 }
 
-export async function printAgReport({ sessions, rows, avgPresent, avgRate, cats }) {
+export async function printAgReport(stats) { printDoc(await agReportHtml(stats)); }
+export async function agReportHtml({ sessions, rows, avgPresent, avgRate, cats }, { finance = true } = {}) {
   const season = activeSeason(), s = S.settings || {};
   const [{ data: all, error }, D, { data: allPays }, { data: allStages }] = await Promise.all([
     sb.from('members').select('*'), loadAccounting(),
@@ -173,7 +175,7 @@ export async function printAgReport({ sessions, rows, avgPresent, avgRate, cats 
   const newOnes = count(m => /nouv/i.test(m.fee_type || ''));
   const t = (title, rowsHtml) => `<h2 class="section-title mt">${title}</h2><table class="table"><tbody>${rowsHtml}</tbody></table>`;
   const tr = (k, v, p = '') => `<tr><td>${k}</td><td style="text-align:right"><strong>${v}</strong></td><td style="text-align:right;width:70px" class="muted">${p}</td></tr>`;
-  printDoc(`
+  return `
     <h1>${esc(s.club_name || 'Club')}</h1>
     <p class="muted">Rapport d’activité${season ? ' — saison ' + esc(season.label) : ''} · arrêté au ${new Date().toLocaleDateString('fr-FR', { day: 'numeric', month: 'long', year: 'numeric' })}${s.club_legal_id ? ' · ' + esc(s.club_legal_id) : ''}</p>
     ${t('Effectifs', tr('Adhérents actifs', active.length) + tr('dont nouveaux adhérents', newOnes, pct(newOnes)) + tr('dont anciens adhérents', active.length - newOnes, pct(active.length - newOnes)) + tr('Femmes', count(m => m.gender === 'Femme'), pct(count(m => m.gender === 'Femme'))) + tr('Hommes', count(m => m.gender === 'Homme'), pct(count(m => m.gender === 'Homme'))) + (count(m => !m.gender) ? tr('Genre non renseigné', count(m => !m.gender), pct(count(m => !m.gender))) : ''))}
@@ -184,7 +186,34 @@ export async function printAgReport({ sessions, rows, avgPresent, avgRate, cats 
     ${t('Activité', tr('Séances avec appel', sessions.length) + tr('Présents par séance (moyenne)', avgPresent.toLocaleString('fr-FR', { maximumFractionDigits: 1 })) + tr('Taux de présence moyen', avgRate + ' %') + cats.map(c => tr('Adhérents « ' + c.k + ' »', rows.filter(r => r.sessions.length && r.label === c.k).length)).join(''))}
     ${evoHtml}
     ${stagesHtml}
-    <h2 class="section-title mt">Bilan financier</h2>
-    ${bilanHtml(D)}
-  `);
+    ${finance ? `<h2 class="section-title mt">Bilan financier</h2>
+    ${bilanHtml(D)}` : ''}
+  `;
+}
+
+/* Dossier d'AG : page de garde, rapport d'activité, puis comptes annuels complets, en un seul document */
+export async function printAgDossier(btn) {
+  const label = btn?.innerHTML;
+  if (btn) { btn.disabled = true; btn.textContent = 'Préparation…'; }
+  try {
+    const season = activeSeason() || S.seasons[0] || null, s = S.settings || {};
+    const [stats, bil] = await Promise.all([attendanceSummary(), seasonBilan(season)]);
+    const report = await agReportHtml(stats, { finance: false });
+    const today = new Date().toLocaleDateString('fr-FR', { day: 'numeric', month: 'long', year: 'numeric' });
+    printDoc(`
+      <div class="ag-cover">
+        <div class="logo-mark">D</div>
+        <div class="ag-club">${esc(s.club_name || 'Association')}</div>
+        <h1>Assemblée générale</h1>
+        <div class="ag-season">${season ? 'Saison ' + esc(season.label) : ''}</div>
+        <p class="muted">${esc(s.club_address || '')}${s.club_legal_id ? ' · ' + esc(s.club_legal_id) : ''}</p>
+        <ol class="ag-toc"><li>Rapport d’activité</li><li>Comptes annuels : compte de résultat, bilan, annexe</li></ol>
+        <p class="small muted">Document édité le ${today}${season?.is_active ? ' · saison en cours : chiffres provisoires' : ''}.</p>
+      </div>
+      <div class="page-break"></div>
+      ${report}
+      <div class="page-break"></div>
+      ${bilanPrintHtml(bil.B, bil.P, bil.X)}`, 'print-dossier');
+  } catch (e) { fail(e); }
+  if (btn) { btn.disabled = false; btn.innerHTML = label; }
 }

@@ -452,3 +452,19 @@ a.btn.disabled { opacity: .45; }
 .ts-tick input { width: 22px; height: 22px; accent-color: var(--ok); }
 @media print { .ts-tick input { width: 12px; height: 12px; } }
 .print-preview .ts-tick span { display: none; }
+
+/* ---------- Dossier d'AG ---------- */
+.ag-cover { text-align: center; padding: 30px 0 10px; }
+.ag-cover .logo-mark { margin: 0 auto 18px; }
+.ag-club { font-family: var(--display); font-weight: 800; font-size: 20px; text-transform: uppercase; }
+.ag-cover h1 { font-size: 30px !important; margin: 18px 0 6px !important; }
+.ag-season { font-size: 18px; font-weight: 600; margin-bottom: 14px; }
+.ag-toc { display: inline-block; text-align: left; margin: 18px auto; line-height: 1.8; }
+.print-preview .page-break { border-top: 2px dashed var(--line); margin: 28px 0; }
+@media print {
+  #print-root .page-break { break-before: page; border: 0; margin: 0; }
+  #print-root.print-dossier .ag-cover { padding-top: 70mm; }
+  #print-root.print-dossier .ag-cover .logo-mark { -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+  #print-root.print-dossier .bilan-print { font-size: 10.5px; }
+  #print-root.print-dossier .bilan-print .section-title { margin: 14px 0 6px; font-size: 13px; }
+}

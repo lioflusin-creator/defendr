@@ -1,7 +1,7 @@
 // Defendr — Comptabilité et bilan
 import { $, $$, S, activeSeason, closeModal, confirmBox, esc, fail, fmtDate, fmtMoney, fullName, icon, isoDay, openModal, parseDay, readForm, sb, toast } from './core.js';
 import { go, head, route } from './shell.js';
-import { printDoc } from './print.js';
+import { printAgDossier, printDoc } from './print.js';
 
 /* =====================================================================
    Comptabilité
@@ -379,8 +379,8 @@ export function bilanBlocks(B, P) {
 }
 
 S.bilanSeason = null;
-export async function viewBilan(view) {
-  const season = S.seasons.find(x => x.id === S.bilanSeason) || activeSeason() || S.seasons[0] || null;
+/* Bilan complet d'une saison (compte de résultat N/N-1, bilan, annexe) : page Bilan et dossier d'AG */
+export async function seasonBilan(season) {
   const prev = prevSeasonOf(season);
   const [B, P] = await Promise.all([loadSeasonBooks(season), prev ? loadSeasonBooks(prev) : null]);
   if (season?.is_active) {
@@ -393,10 +393,14 @@ export async function viewBilan(view) {
       B.unpaidFees = mem.reduce((t, m) => t + Math.max(0, Math.round(Number(m.fee_amount || 0) * 100) - (paidBy[m.id] || 0)), 0);
     }
   }
-  const X = bilanBlocks(B, P);
+  return { season, prev, B, P, X: bilanBlocks(B, P) };
+}
+
+export async function viewBilan(view) {
+  const { season, prev, B, P, X } = await seasonBilan(S.seasons.find(x => x.id === S.bilanSeason) || activeSeason() || S.seasons[0] || null);
   view.innerHTML = `<div class="row mb"><a href="#/paiements" class="btn btn-sm">${icon('back')}Comptabilité</a></div>`
     + head('Bilan comptable', `${esc(S.settings?.club_name || 'Association')}${season ? ' · saison ' + esc(season.label) : ''}${prev ? ' · comparé à ' + esc(prev.label) : ''}`,
-      `<button class="btn btn-primary" id="bl-print">${icon('file')}Imprimer / PDF pour l’AG</button>`) + `
+      `<button class="btn" id="bl-print">${icon('file')}Imprimer les comptes</button><button class="btn btn-primary" id="bl-dossier">${icon('file')}Dossier d’AG complet</button>`) + `
     ${S.seasons.length > 1 ? `<div class="chips mb">${S.seasons.map(x => `<button class="chip ${x.id === season?.id ? 'active' : ''}" data-bs="${x.id}">${esc(x.label)}${x.is_active ? ' · en cours' : ''}</button>`).join('')}</div>` : ''}
     <div class="grid acc-stats mb">
       <div class="card stat"><div class="label">Produits</div><div class="value" style="color:var(--ok)">${eur(B.totP)}</div></div>
@@ -411,12 +415,14 @@ export async function viewBilan(view) {
     <p class="small muted">Les rubriques sont déduites des catégories de dépenses et des types de recettes. Pour qu’une ligne change de rubrique, renommez sa catégorie ou son type (ex. « Subvention mairie », « Location salle »).</p>`;
   $$('[data-bs]', view).forEach(b => b.onclick = () => { S.bilanSeason = b.dataset.bs; route(); });
   $('#bl-print', view).onclick = () => printBilan(B, P, X);
+  $('#bl-dossier', view).onclick = e => printAgDossier(e.currentTarget);
 }
 
-export function printBilan(B, P, X) {
+export function printBilan(B, P, X) { printDoc(bilanPrintHtml(B, P, X), 'print-bilan'); }
+export function bilanPrintHtml(B, P, X) {
   const s = S.settings || {};
   const today = new Date().toLocaleDateString('fr-FR', { day: 'numeric', month: 'long', year: 'numeric' });
-  printDoc(`
+  return `
     <div class="bilan-print">
       <div class="attest-head"><div class="logo-mark">D</div>
         <div><div class="attest-club">${esc(s.club_name || 'Association')}</div>
@@ -428,5 +434,5 @@ export function printBilan(B, P, X) {
       <h2 class="section-title">3. Annexe</h2>${X.annexe}
       <p style="margin-top:22px">Comptes arrêtés par le bureau et soumis à l’approbation de l’assemblée générale du …………………………</p>
       <div class="bilan-signs"><div>Le/la président(e)<div class="sign-box">${esc(s.president_name || '')}</div></div><div>Le/la trésorier(ère)<div class="sign-box"></div></div></div>
-    </div>`, 'print-bilan');
+    </div>`;
 }

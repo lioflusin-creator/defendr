@@ -4,7 +4,7 @@ import { head, route } from './shell.js';
 import { seasonStart } from './inscriptions.js';
 import { PROSPECT_SOURCE } from './prospects.js';
 import { attendanceFor, seasonSessionsWithCall } from './planning.js';
-import { printAgReport } from './print.js';
+import { printAgDossier, printAgReport } from './print.js';
 
 /* =====================================================================
    Statistiques d'inscription (page Statistiques)
@@ -44,7 +44,8 @@ export async function registrationStats(box) {
    ===================================================================== */
 S.stats = { filter: 'tous', sort: 'taux' };
 
-export async function viewStats(view) {
+/* Assiduité de la saison : utilisée par la page Statistiques et par le dossier d'AG */
+export async function attendanceSummary() {
   const sessions = await seasonSessionsWithCall();
   const ids = sessions.map(s => s.id);
   const [mr, ar] = await Promise.all([
@@ -68,10 +69,15 @@ export async function viewStats(view) {
   const avgRate = withSessions.length ? Math.round(withSessions.reduce((s, r) => s + r.rate, 0) / withSessions.length) : 0;
   const perSession = sessions.slice().reverse().map(s => ({ s, n: ar.data.filter(a => a.course_id === s.id).length }));
   const avgPresent = perSession.length ? (perSession.reduce((s, x) => s + x.n, 0) / perSession.length) : 0;
+  return { sessions, rows, cats, withSessions, noSession, avgRate, perSession, avgPresent };
+}
+
+export async function viewStats(view) {
+  const { sessions, rows, cats, withSessions, noSession, avgRate, perSession, avgPresent } = await attendanceSummary();
   const maxN = Math.max(1, ...perSession.map(x => x.n));
 
   view.innerHTML = head('Statistiques', `Assiduité de la saison${activeSeason() ? ' ' + esc(activeSeason().label) : ''}, calculée pour chaque adhérent depuis son inscription`,
-    isAdmin() ? `<button class="btn" id="ag-report">${icon('file')}Rapport pour l’AG</button>` : '') + `
+    isAdmin() ? `<button class="btn" id="ag-report">${icon('file')}Rapport pour l’AG</button><button class="btn btn-primary" id="ag-dossier">${icon('file')}Dossier d’AG complet</button>` : '') + `
     <div class="grid stats mb">
       ${cats.map(c => { const n = withSessions.filter(r => r.label === c.k).length; return `<button class="card stat stat-btn ${S.stats.filter === c.k ? 'sel' : ''}" data-cat="${c.k}"><div class="label"><span class="dot ${c.cls}"></span>${c.k}</div><div class="value">${n}</div><div class="hint">adhérent(s) · ${c.hint}</div></button>`; }).join('')}
     </div>
@@ -109,6 +115,7 @@ export async function viewStats(view) {
     try { await printAgReport({ sessions, rows, avgPresent, avgRate, cats }); } catch (e) { fail(e); }
     btn.disabled = false;
   });
+  $('#ag-dossier') && ($('#ag-dossier').onclick = e => printAgDossier(e.currentTarget));
   $$('[data-cat]', view).forEach(b => b.onclick = () => { S.stats.filter = S.stats.filter === b.dataset.cat ? 'tous' : b.dataset.cat; route(); });
   $$('[data-sort]', view).forEach(b => b.onclick = () => { S.stats.sort = b.dataset.sort; route(); });
   $('#clear-f') && ($('#clear-f').onclick = () => { S.stats.filter = 'tous'; route(); });
