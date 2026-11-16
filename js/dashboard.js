@@ -4,7 +4,7 @@ import { head, route } from './shell.js';
 import { openRegistrations } from './inscriptions.js';
 import { dashProspects } from './prospects.js';
 import { lastBackup } from './backup.js';
-import { waUrl } from './whatsapp.js';
+import { bindWeeklyPoll, isSummerBreak, waUrl, weeklyPollCard, weeklyPollDays } from './whatsapp.js';
 
 /* =====================================================================
    Tableau de bord
@@ -98,8 +98,11 @@ export async function viewDashboard(view) {
       <div class="card stat"><div class="label">Anniversaires</div><div class="value">${bdays.length}</div><div class="hint">ce mois-ci</div></div>`;
   }
 
+  // Le dimanche : les questions du sondage de la semaine, directement sur l'accueil (hors vacances d'été)
+  const sundayPoll = new Date().getDay() === 0 && !isSummerBreak(weeklyPollDays()) ? weeklyPollDays() : null;
   view.innerHTML = head('Tableau de bord', `Vue d'ensemble de votre club${season ? ' · saison ' + esc(season.label) : ''}`) + `
     <div id="dash-regs"></div><div id="dash-prospects"></div>
+    ${sundayPoll ? weeklyPollCard(sundayPoll, true) : ''}
     ${isAdmin() && (!lastBackup() || Date.now() - new Date(lastBackup()) > 31 * 86400000) ? `<div class="alert info">Pensez à télécharger une sauvegarde de vos données : <a href="#/parametres">Paramètres → Sauvegarde</a>.</div>` : ''}
     ${!season && isAdmin() ? `<div class="alert info">Aucune saison active. <a href="#/parametres">Créez la saison en cours dans les Paramètres</a> pour suivre la comptabilité par saison.</div>` : ''}
     <div class="grid stats mb">
@@ -131,6 +134,7 @@ export async function viewDashboard(view) {
     $('#dash-open-regs') && ($('#dash-open-regs').onclick = openRegistrations);
   });
   dashProspects();
+  if (sundayPoll) bindWeeklyPoll(view, sundayPoll);
   $$('[data-deposit]', view).forEach(b => b.onclick = async () => {
     b.disabled = true;
     const { error } = await sb.from('payments').update({ bank_checked: true }).eq('id', b.dataset.deposit);

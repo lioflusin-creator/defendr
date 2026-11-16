@@ -1,6 +1,6 @@
 // Defendr — Sauvegarde et restauration
 import { SUPABASE_ANON_KEY, SUPABASE_URL } from '../config.js';
-import { $, MONTHS, S, closeModal, discName, esc, fail, fmtDate, fmtMoney, fullName, icon, isoDay, levelName, openModal, pad2, sb, toast } from './core.js';
+import { $, MONTHS, S, closeModal, discName, esc, fail, fmtDate, fmtMoney, fullName, icon, isoDay, levelName, openModal, pad2, sb, toast, saveFile, XLSX_MIME } from './core.js';
 import { go, loadRefs, route } from './shell.js';
 
 /* =====================================================================
@@ -67,9 +67,10 @@ export async function downloadBackup(btn) {
       XLSX.utils.book_append_sheet(wb, ws, name);
     }
     const stamp = new Date().toISOString().slice(0, 16).replace('T', '-').replace(':', 'h');
-    XLSX.writeFile(wb, `Defendr-sauvegarde-${stamp}.xlsx`);
+    const saved = await saveFile(new Blob([XLSX.write(wb, { bookType: 'xlsx', type: 'array' })], { type: XLSX_MIME }), `Defendr-sauvegarde-${stamp}.xlsx`);
+    if (!saved) return false;
     try { localStorage.setItem(BACKUP_KEY, new Date().toISOString()); } catch {}
-    toast('Sauvegarde téléchargée');
+    toast('Sauvegarde enregistrée');
     const info = btn?.previousElementSibling; if (info) info.innerHTML = lastBackupText();
     return true;
   } catch (e) { fail(e); return false; }

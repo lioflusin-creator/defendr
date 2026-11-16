@@ -1,5 +1,5 @@
 // Defendr — Impression et export Excel des membres
-import { $, S, activeSeason, ageOf, discName, esc, fail, fmtDate, fmtMoney, fullName, icon, isoDay, levelName, openModal, sb, toast } from './core.js';
+import { $, $$, S, activeSeason, ageOf, discName, esc, fail, fmtDate, fmtMoney, fullName, icon, isoDay, levelName, openModal, sb, toast, saveFile, XLSX_MIME } from './core.js';
 import { seasonStart } from './inscriptions.js';
 import { XLSX_URL } from './backup.js';
 import { bilanHtml, loadAccounting } from './compta.js';
@@ -7,7 +7,7 @@ import { bilanHtml, loadAccounting } from './compta.js';
 /* =====================================================================
    Impression (attestations, rapports)
    ===================================================================== */
-export function printDoc(html, cls = '') {
+export function printDoc(html, cls = '', onPreview = null) {
   let el = $('#print-root');
   if (!el) { el = document.createElement('div'); el.id = 'print-root'; document.body.appendChild(el); }
   el.className = cls;
@@ -20,7 +20,7 @@ export function printDoc(html, cls = '') {
       title: 'Aperçu',
       body: `<div class="print-preview ${cls}">${html}</div>`,
       foot: `<button class="btn" data-close>Fermer</button><button class="btn btn-primary" id="pp-print">${icon('file')}Imprimer / PDF</button>`,
-      onMount: r => $('#pp-print', r).onclick = () => window.print(),
+      onMount: r => { $('#pp-print', r).onclick = () => window.print(); onPreview?.(r); },
     });
     return;
   }
@@ -60,13 +60,17 @@ export async function exportMembersXlsx(rows, label, balance, btn) {
     const wb = XLSX.utils.book_new();
     XLSX.utils.book_append_sheet(wb, ws, 'Membres');
     const slug = label.normalize('NFD').replace(/\p{Diacritic}/gu, '').replace(/[^\w]+/g, '-').toLowerCase();
-    XLSX.writeFile(wb, `Membres-${slug}-${isoDay(new Date())}.xlsx`);
-    toast(`${rows.length} membre${rows.length > 1 ? 's' : ''} exporté${rows.length > 1 ? 's' : ''}`);
+    const saved = await saveFile(new Blob([XLSX.write(wb, { bookType: 'xlsx', type: 'array' })], { type: XLSX_MIME }), `Membres-${slug}-${isoDay(new Date())}.xlsx`);
+    if (saved) toast(`${rows.length} membre${rows.length > 1 ? 's' : ''} exporté${rows.length > 1 ? 's' : ''}`);
   } catch (e) { fail(e); }
   if (btn) { btn.disabled = false; btn.innerHTML = html; }
 }
 
-export function printTshirtList(rows, label) {
+export function printTshirtList(rows, label, onChange = null) {
+  // Colonne « Remis » : vraie case à cocher dans l'aperçu (téléphone) une fois migration-12.sql exécuté
+  const canTick = rows.length > 0 && 'tshirt_given_at' in rows[0];
+  const given = m => m.tshirt_given_at ? fmtDate(m.tshirt_given_at) : '';
+  const tick = m => canTick ? `<label class="ts-tick"><input type="checkbox" data-tsg="${m.id}" ${m.tshirt_given_at ? 'checked' : ''}><span class="small" data-tsd="${m.id}">${given(m)}</span></label>` : '☐';
   const SIZES = ['XS', 'S', 'M', 'L', 'XL', 'XXL', 'XXXL'];
   const count = {};
   rows.forEach(m => { const k = m.tshirt_size || 'Non renseignée'; count[k] = (count[k] || 0) + 1; });
@@ -80,8 +84,24 @@ export function printTshirtList(rows, label) {
       <tbody><tr>${keys.map(k => `<td style="text-align:center">${count[k]}</td>`).join('')}<td style="text-align:center"><strong>${rows.length}</strong></td></tr></tbody></table>
     <h2 class="section-title mt">Détail</h2>
     <table class="table"><thead><tr><th style="width:28px">#</th><th>Nom</th><th>Prénom</th><th>Taille T-shirt</th><th style="width:90px">Remis</th></tr></thead><tbody>
-      ${sorted.map((m, i) => `<tr><td>${i + 1}</td><td>${esc((m.last_name || '').toUpperCase())}</td><td>${esc(m.first_name || '')}</td><td><strong>${esc(m.tshirt_size || '—')}</strong></td><td>${m.tshirt_given_at ? '☑ ' + fmtDate(m.tshirt_given_at) : '☐'}</td></tr>`).join('')}
-    </tbody></table>`);
+      ${sorted.map((m, i) => `<tr><td>${i + 1}</td><td>${esc((m.last_name || '').toUpperCase())}</td><td>${esc(m.first_name || '')}</td><td><strong>${esc(m.tshirt_size || '—')}</strong></td><td>${tick(m)}</td></tr>`).join('')}
+    </tbody></table>`, '', root => {
+    if (!canTick) return;
+    $$('[data-tsg]', root).forEach(cb => cb.onchange = async () => {
+      const m = rows.find(x => x.id === cb.dataset.tsg);
+      const value = cb.checked ? isoDay(new Date()) : null;
+      cb.disabled = true;
+      const { error } = await sb.from('members').update({ tshirt_given_at: value }).eq('id', m.id);
+      cb.disabled = false;
+      if (error) { cb.checked = !cb.checked; return fail(error); }
+      m.tshirt_given_at = value;
+      // même état dans la version imprimée
+      $$(`[data-tsg="${m.id}"]`).forEach(x => { x.checked = !!value; });
+      $$(`[data-tsd="${m.id}"]`).forEach(x => { x.textContent = given(m); });
+      toast(value ? `T-shirt remis à ${fullName(m)}` : `Remise annulée pour ${fullName(m)}`);
+      onChange?.();
+    });
+  });
 }
 
 export function printAttestation(m, pays, season) {

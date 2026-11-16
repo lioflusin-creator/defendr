@@ -17,6 +17,31 @@ export function weeklyPollDays(from = new Date()) {
   const thu = new Date(tue); thu.setDate(tue.getDate() + 2);
   return [tue, thu];
 }
+// Pas de sondage si le mardi ou le jeudi tombe pendant les vacances d'été (juillet, août)
+export const isSummerBreak = days => days.some(d => d.getMonth() === 6 || d.getMonth() === 7);
+export function nextPollSunday(from = new Date()) {
+  const d = new Date(from.getFullYear(), from.getMonth(), from.getDate());
+  d.setDate(d.getDate() + ((7 - d.getDay()) % 7 || 7));
+  for (let i = 0; i < 30 && isSummerBreak(weeklyPollDays(d)); i++) d.setDate(d.getDate() + 7);
+  return d;
+}
+/* Carte « Sondage de la semaine » (page WhatsApp et tableau de bord du dimanche) */
+export function weeklyPollCard(pollDays, linkToWa = false) {
+  return `<div class="card card-pad mb" id="wa-week">
+      <div class="row between wrap"><h2 style="margin:0">Sondage de la semaine</h2>${linkToWa ? '<a class="small" href="#/whatsapp">Page WhatsApp</a>' : ''}</div>
+      <p class="small muted" style="margin-top:0">Les deux questions pour les cours du mardi et du jeudi qui arrivent, prêtes à coller dans un sondage WhatsApp.</p>
+      ${isSummerBreak(pollDays) ? `<div class="alert info" style="margin:0">Pas de sondage cette semaine : vacances d’été (pas de cours en juillet et en août). Prochain sondage le <strong>${nextPollSunday().toLocaleDateString('fr-FR', { weekday: 'long', day: 'numeric', month: 'long' })}</strong>.</div>` : `${pollDays.map((d, i) => `<div class="bday"><div style="flex:1"><div style="font-weight:600">${i + 1}) ${esc(weeklyPollQuestion(d))}</div><div class="small muted">Réponses : Oui / Non</div></div>
+        <button class="btn btn-sm ${i ? '' : 'btn-primary'}" data-wq="${i}">${icon('copy')}Copier</button></div>`).join('')}
+      <p class="small muted mt" style="margin-bottom:0">Dans le groupe WhatsApp du club : touchez <strong>+</strong> (ou 📎) → <strong>Sondage</strong>, collez la question, écrivez <strong>Oui</strong> et <strong>Non</strong> comme réponses, puis envoyez. Recommencez pour la deuxième question.</p>`}
+    </div>`;
+}
+export function bindWeeklyPoll(root, pollDays) {
+  $$('[data-wq]', root).forEach(b => b.onclick = async () => {
+    const q = weeklyPollQuestion(pollDays[Number(b.dataset.wq)]);
+    try { await navigator.clipboard.writeText(q); toast('Question copiée : collez-la dans le sondage WhatsApp'); }
+    catch { openModal({ title: 'Question du sondage', body: `<p class="small muted">Sélectionnez le texte et copiez-le.</p><textarea class="input" rows="2" readonly>${esc(q)}</textarea>`, foot: '<button class="btn btn-primary" data-close>Fermer</button>' }); }
+  });
+}
 export const weeklyPollQuestion = day => `Qui sera présent(e) au cours du ${day.toLocaleDateString('fr-FR', { weekday: 'long', day: 'numeric', month: 'long' })} ?`;
 
 export async function viewWhatsApp(view) {
@@ -41,13 +66,7 @@ export async function viewWhatsApp(view) {
 
   const pollDays = weeklyPollDays();
   view.innerHTML = head('WhatsApp', 'Anniversaires et sondages de présence') + `
-    <div class="card card-pad mb" id="wa-week">
-      <h2>Sondage de la semaine</h2>
-      <p class="small muted" style="margin-top:0">Les deux questions pour les cours du mardi et du jeudi qui arrivent, prêtes à coller dans un sondage WhatsApp.</p>
-      ${pollDays.map((d, i) => `<div class="bday"><div style="flex:1"><div style="font-weight:600">${i + 1}) ${esc(weeklyPollQuestion(d))}</div><div class="small muted">Réponses : Oui / Non</div></div>
-        <button class="btn btn-sm ${i ? '' : 'btn-primary'}" data-wq="${i}">${icon('copy')}Copier</button></div>`).join('')}
-      <p class="small muted mt" style="margin-bottom:0">Dans le groupe WhatsApp du club : touchez <strong>+</strong> (ou 📎) → <strong>Sondage</strong>, collez la question, écrivez <strong>Oui</strong> et <strong>Non</strong> comme réponses, puis envoyez. Recommencez pour la deuxième question.</p>
-    </div>
+    ${weeklyPollCard(pollDays)}
     <div class="grid two">
       <div class="card card-pad">
         <div class="row between"><h2 style="margin:0">Anniversaires de ${MONTHS[month]}</h2><span class="badge">${bdays.length}</span></div>
@@ -92,11 +111,7 @@ export async function viewWhatsApp(view) {
   $('#wa-course').onchange = e => { S.wa.course = e.target.value; refresh(); };
   $('#wa-custom').oninput = e => { S.wa.custom = e.target.value; refresh(); };
   view.addEventListener('click', e => { const a = e.target.closest('a.disabled'); if (a) { e.preventDefault(); toast('Choisissez d’abord un cours.', 'error'); } });
-  $$('[data-wq]', view).forEach(b => b.onclick = async () => {
-    const q = weeklyPollQuestion(pollDays[Number(b.dataset.wq)]);
-    try { await navigator.clipboard.writeText(q); toast('Question copiée : collez-la dans le sondage WhatsApp'); }
-    catch { openModal({ title: 'Question du sondage', body: `<p class="small muted">Sélectionnez le texte et copiez-le.</p><textarea class="input" rows="2" readonly>${esc(q)}</textarea>`, foot: '<button class="btn btn-primary" data-close>Fermer</button>' }); }
-  });
+  bindWeeklyPoll(view, pollDays);
   $('#wa-copy').onclick = async () => {
     if (!S.wa.course) return toast('Choisissez d’abord un cours.', 'error');
     try { await navigator.clipboard.writeText(pollText()); toast('Message copié'); }

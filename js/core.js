@@ -147,6 +147,36 @@ export function openModal({ title, body, foot = '', size = '', onMount }) {
 }
 export function escClose(e) { if (e.key === 'Escape') closeModal(); }
 export function closeModal() { $('#modal-root').innerHTML = ''; document.removeEventListener('keydown', escClose); }
+/* Enregistrer un fichier créé par l'appli. Sur téléphone (iPhone surtout, et dans l'appli installée
+   sur l'écran d'accueil), un téléchargement direct ne marche pas bien : on passe par le menu Partager,
+   d'où l'on peut « Enregistrer dans Fichiers », l'envoyer par mail, etc. Renvoie true si le fichier est parti. */
+export async function saveFile(blob, filename) {
+  const file = new File([blob], filename, { type: blob.type });
+  const mobile = matchMedia('(pointer: coarse)').matches || navigator.standalone;
+  if (mobile && navigator.canShare?.({ files: [file] })) {
+    const share = () => navigator.share({ files: [file], title: filename }).then(() => true, e => e?.name === 'AbortError' ? false : Promise.reject(e));
+    try { return await share(); }
+    catch (e) {
+      if (e?.name !== 'NotAllowedError') throw e;
+      // La préparation a pris trop de temps : le téléphone exige un nouveau toucher pour partager
+      return new Promise(resolve => openModal({
+        title: 'Fichier prêt', size: 'sm',
+        body: `<p style="margin:0"><strong>${esc(filename)}</strong></p><p class="small muted">Touchez le bouton, puis choisissez « Enregistrer dans Fichiers » ou l’application de votre choix.</p>`,
+        foot: `<button class="btn" data-close>Annuler</button><button class="btn btn-primary" id="sf-go">${icon('up')}Enregistrer / partager</button>`,
+        onMount: r => {
+          $('#sf-go', r).onclick = () => share().then(ok => { closeModal(); resolve(ok); }, err => { closeModal(); fail(err); resolve(false); });
+          $$('[data-close]', r).forEach(b => b.addEventListener('click', () => resolve(false)));
+        },
+      }));
+    }
+  }
+  const url = URL.createObjectURL(blob);
+  const a = Object.assign(document.createElement('a'), { href: url, download: filename });
+  document.body.appendChild(a); a.click(); a.remove();
+  setTimeout(() => URL.revokeObjectURL(url), 30000);
+  return true;
+}
+export const XLSX_MIME = 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet';
 export function confirmBox(title, text, okLabel = 'Supprimer') {
   return new Promise(resolve => {
     openModal({

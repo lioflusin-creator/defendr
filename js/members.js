@@ -95,7 +95,10 @@ export async function viewMembers(view) {
   if ($('#print-tshirts')) $('#print-tshirts').onclick = () => {
     if (!shownRows.length) return toast('Aucun membre à imprimer');
     const f = filters.find(x => x.k === S.memberFilter);
-    printTshirtList(shownRows, f.label + (S.memberSearch ? ` · recherche « ${S.memberSearch} »` : ''));
+    printTshirtList(shownRows, f.label + (S.memberSearch ? ` · recherche « ${S.memberSearch} »` : ''), () => {
+      $$('[data-f]', view).forEach(c => { const x = filters.find(y => y.k === c.dataset.f); if (x) $('.n', c).textContent = members.filter(x.fn).length; });
+      draw();
+    });
   };
   $('#export-members').onclick = () => {
     if (!shownRows.length) return toast('Aucun membre à exporter');
