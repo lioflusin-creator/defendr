@@ -1,5 +1,5 @@
 // Defendr — WhatsApp
-import { $, $$, MONTHS, S, esc, fmtDate, fmtDay, fullName, hhmm, icon, initials, isAdmin, isBirthdayMonth, isoDay, parseDay, sb, toast, waLink } from './core.js';
+import { $, $$, MONTHS, S, esc, openModal, fmtDate, fmtDay, fullName, hhmm, icon, initials, isAdmin, isBirthdayMonth, isoDay, parseDay, sb, toast, waLink } from './core.js';
 import { head } from './shell.js';
 
 /* =====================================================================
@@ -9,6 +9,15 @@ export const waUrl = (phone, text) => { const base = phone ? waLink(phone) : 'ht
 export const DEFAULT_POLL = 'Bonjour ! 👊\n\nSondage de présence pour le cours *[COURS]*\ndu *[DATE]* à *[HEURE]*.\n\nSerez-vous présent(e) ?\n✅ Oui\n❌ Non\n\nMerci de répondre à ce message ! 🙏';
 export const birthdayText = m => `Joyeux anniversaire ${m.first_name} ! 🎉🥳\nToute l’équipe du ${S.settings?.club_name || 'club'} te souhaite une excellente journée. À très vite sur le tatami ! 👊`;
 S.wa = { course: '', custom: '' };
+
+// Sondage de la semaine : le mardi qui suit le jour d'envoi, puis le jeudi juste après
+export function weeklyPollDays(from = new Date()) {
+  const d = new Date(from.getFullYear(), from.getMonth(), from.getDate());
+  const tue = new Date(d); tue.setDate(d.getDate() + (((2 - d.getDay() + 7) % 7) || 7));
+  const thu = new Date(tue); thu.setDate(tue.getDate() + 2);
+  return [tue, thu];
+}
+export const weeklyPollQuestion = day => `Qui sera présent(e) au cours du ${day.toLocaleDateString('fr-FR', { weekday: 'long', day: 'numeric', month: 'long' })} ?`;
 
 export async function viewWhatsApp(view) {
   const today = isoDay(new Date());
@@ -30,7 +39,15 @@ export async function viewWhatsApp(view) {
   };
   const bdayList = bdays.map(m => `${fmtDay(m.birth_date)} : ${fullName(m)} (${new Date().getFullYear() - Number(m.birth_date.slice(0, 4))} ans)`).join('\n');
 
+  const pollDays = weeklyPollDays();
   view.innerHTML = head('WhatsApp', 'Anniversaires et sondages de présence') + `
+    <div class="card card-pad mb" id="wa-week">
+      <h2>Sondage de la semaine</h2>
+      <p class="small muted" style="margin-top:0">Les deux questions pour les cours du mardi et du jeudi qui arrivent, prêtes à coller dans un sondage WhatsApp.</p>
+      ${pollDays.map((d, i) => `<div class="bday"><div style="flex:1"><div style="font-weight:600">${i + 1}) ${esc(weeklyPollQuestion(d))}</div><div class="small muted">Réponses : Oui / Non</div></div>
+        <button class="btn btn-sm ${i ? '' : 'btn-primary'}" data-wq="${i}">${icon('copy')}Copier</button></div>`).join('')}
+      <p class="small muted mt" style="margin-bottom:0">Dans le groupe WhatsApp du club : touchez <strong>+</strong> (ou 📎) → <strong>Sondage</strong>, collez la question, écrivez <strong>Oui</strong> et <strong>Non</strong> comme réponses, puis envoyez. Recommencez pour la deuxième question.</p>
+    </div>
     <div class="grid two">
       <div class="card card-pad">
         <div class="row between"><h2 style="margin:0">Anniversaires de ${MONTHS[month]}</h2><span class="badge">${bdays.length}</span></div>
@@ -75,6 +92,11 @@ export async function viewWhatsApp(view) {
   $('#wa-course').onchange = e => { S.wa.course = e.target.value; refresh(); };
   $('#wa-custom').oninput = e => { S.wa.custom = e.target.value; refresh(); };
   view.addEventListener('click', e => { const a = e.target.closest('a.disabled'); if (a) { e.preventDefault(); toast('Choisissez d’abord un cours.', 'error'); } });
+  $$('[data-wq]', view).forEach(b => b.onclick = async () => {
+    const q = weeklyPollQuestion(pollDays[Number(b.dataset.wq)]);
+    try { await navigator.clipboard.writeText(q); toast('Question copiée : collez-la dans le sondage WhatsApp'); }
+    catch { openModal({ title: 'Question du sondage', body: `<p class="small muted">Sélectionnez le texte et copiez-le.</p><textarea class="input" rows="2" readonly>${esc(q)}</textarea>`, foot: '<button class="btn btn-primary" data-close>Fermer</button>' }); }
+  });
   $('#wa-copy').onclick = async () => {
     if (!S.wa.course) return toast('Choisissez d’abord un cours.', 'error');
     try { await navigator.clipboard.writeText(pollText()); toast('Message copié'); }
