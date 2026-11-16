@@ -3,7 +3,7 @@
 Ce dossier contient tout le logiciel de gestion du club. Il ne contient aucune donnée d'adhérent.
 
 ## Ce qu'il contient
-- `index.html`, `app.js`, `style.css` : l'application.
+- `index.html`, `app.js`, le dossier `js/` (une partie du logiciel par rubrique) et `style.css` : l'application.
 - `inscription.html` : la fiche d'inscription en ligne.
 - `schema.sql` : la structure complète de la base de données (les fichiers `migration-*.sql` sont déjà inclus dedans).
 - `config.js` : l'adresse du projet Supabase utilisé par l'application.
