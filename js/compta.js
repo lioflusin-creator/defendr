@@ -26,7 +26,22 @@ export function accountingTotals({ season, payments, expenses }) {
   const paid = sum(live.filter(p => p.status === 'payé')), pending = sum(live.filter(p => p.status === 'en attente'));
   const exp = sum(liveE), opening = Number(season?.opening_balance || 0);
   const bankIn = sum(live.filter(p => p.status === 'payé' && p.bank_checked)), bankOut = sum(liveE.filter(e => e.bank_checked));
-  return { paid, pending, exp, opening, balance: opening + paid - exp, bankIn, bankOut, bank: bankIn - bankOut };
+  const balance = opening + paid - exp, current = opening + bankIn - bankOut;
+  // current : solde actuel (sommes pointées seulement) · balance : solde théorique (pointées + non pointées)
+  // unchecked : en attente = recettes encaissées non pointées − dépenses non pointées
+  return { paid, pending, exp, opening, balance, current, unchecked: balance - current, uncheckedIn: paid - bankIn, uncheckedOut: exp - bankOut, bankIn, bankOut, bank: bankIn - bankOut };
+}
+function accStatsHtml(T, season) {
+  return {
+    sub: `<strong>Solde actuel : ${fmtMoney(T.current)}</strong> · solde théorique ${fmtMoney(T.balance)} · ${fmtMoney(T.unchecked)} en attente de pointage${T.pending ? ` · ${fmtMoney(T.pending)} de paiements à recevoir` : ''}${season ? ' · saison ' + esc(season.label) : ''}`,
+    cards: `
+      <div class="card stat accent"><div class="label">Solde actuel</div><div class="value">${fmtMoney(T.current)}</div><div class="hint">Sommes pointées : ${fmtMoney(T.opening)} + ${fmtMoney(T.bankIn)} − ${fmtMoney(T.bankOut)}</div></div>
+      <div class="card stat"><div class="label">Solde théorique</div><div class="value">${fmtMoney(T.balance)}</div><div class="hint">Pointé et non pointé : ${fmtMoney(T.opening)} + ${fmtMoney(T.paid)} − ${fmtMoney(T.exp)}</div></div>
+      <div class="card stat"><div class="label">En attente</div><div class="value" style="color:var(--warn)">${fmtMoney(T.unchecked)}</div><div class="hint">Non pointé : ${fmtMoney(T.uncheckedIn)} − ${fmtMoney(T.uncheckedOut)}</div></div>
+      <div class="card stat"><div class="label">Solde de départ</div><div class="value">${fmtMoney(T.opening)}</div><div class="hint">Début de saison</div></div>
+      <div class="card stat"><div class="label">Encaissé</div><div class="value" style="color:var(--ok)">${fmtMoney(T.paid)}</div>${T.pending ? `<div class="hint">+ ${fmtMoney(T.pending)} à recevoir</div>` : ''}</div>
+      <div class="card stat"><div class="label">Déboursé</div><div class="value" style="color:var(--danger)">${fmtMoney(T.exp)}</div></div>`,
+  };
 }
 
 export async function viewAccounting(view) {
@@ -35,15 +50,10 @@ export async function viewAccounting(view) {
   const payer = p => p.member_id ? mName(p.member_id) : (p.notes || 'Recette hors adhérent');
   const norm = s => (s || '').toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g, '');
 
-  view.innerHTML = head('Comptabilité', `<strong>Solde actuel : ${fmtMoney(T.balance)}</strong> · ${fmtMoney(T.paid)} encaissés · ${fmtMoney(T.exp)} déboursés · ${fmtMoney(T.pending)} en attente${D.season ? ' · saison ' + esc(D.season.label) : ''}`,
+  const H = accStatsHtml(T, D.season);
+  view.innerHTML = head('Comptabilité', `<span id="acc-sub">${H.sub}</span>`,
     `<button class="btn" id="bilan">${icon('chart')}Bilan comptable</button><button class="btn" id="pdf">${icon('file')}Export PDF</button>`) + `
-    <div class="grid acc-stats mb">
-      <div class="card stat accent"><div class="label">Solde actuel</div><div class="value">${fmtMoney(T.balance)}</div><div class="hint">${fmtMoney(T.opening)} + ${fmtMoney(T.paid)} − ${fmtMoney(T.exp)}</div></div>
-      <div class="card stat"><div class="label">Solde de départ</div><div class="value">${fmtMoney(T.opening)}</div><div class="hint">Début de saison</div></div>
-      <div class="card stat"><div class="label">Encaissé</div><div class="value" style="color:var(--ok)">${fmtMoney(T.paid)}</div></div>
-      <div class="card stat"><div class="label">Déboursé</div><div class="value" style="color:var(--danger)">${fmtMoney(T.exp)}</div></div>
-      <div class="card stat"><div class="label">En attente</div><div class="value" style="color:var(--warn)">${fmtMoney(T.pending)}</div><div class="hint">Pas encore dans le solde</div></div>
-      <div class="card stat"><div class="label">Pointé banque</div><div class="value">${fmtMoney(T.bank)}</div><div class="hint">${fmtMoney(T.bankIn)} − ${fmtMoney(T.bankOut)}</div></div>
+    <div class="grid acc-stats mb" id="acc-stats">${H.cards}
     </div>
     <div class="toolbar between">
       <div class="chips">
@@ -102,6 +112,8 @@ export async function viewAccounting(view) {
         const { error } = await sb.from(table).update({ bank_checked: cb.checked }).eq('id', cb.dataset.pt);
         if (error) { cb.checked = !cb.checked; return fail(error); }
         const item = (A.tab === 'paiements' ? D.payments : D.expenses).find(x => x.id === cb.dataset.pt); item.bank_checked = cb.checked;
+        const H2 = accStatsHtml(accountingTotals(D), D.season);
+        $('#acc-stats').innerHTML = H2.cards; const sub = $('#acc-sub'); if (sub) sub.innerHTML = H2.sub;
         toast(cb.checked ? 'Pointé' : 'Pointage retiré');
       };
     });
@@ -232,7 +244,7 @@ export function bilanHtml(D) {
       <tr><td>− Dépenses</td><td style="text-align:right">−${fmtMoney(T.exp)}</td></tr>
       <tr><td><strong>Résultat de l’exercice (recettes − dépenses)</strong></td><td style="text-align:right"><strong>${fmtMoney(T.paid - T.exp)}</strong></td></tr>
       <tr><td><strong>Solde comptable</strong></td><td style="text-align:right"><strong>${fmtMoney(T.balance)}</strong></td></tr>
-      <tr><td>Paiements en attente</td><td style="text-align:right">${fmtMoney(T.pending)}</td></tr>
+      <tr><td>Paiements à recevoir (non encore payés)</td><td style="text-align:right">${fmtMoney(T.pending)}</td></tr>
     </tbody></table>
     ${B.methodes.length ? `<h2 class="section-title mt">Recettes par mode de paiement</h2>${tbl(B.methodes, T.paid)}` : ''}`;
 }
