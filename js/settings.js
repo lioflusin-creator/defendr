@@ -45,8 +45,9 @@ export async function viewSettings(view) {
         <div class="field"><label for="st-addr">Adresse du club</label><input class="input" id="st-addr" name="club_address" value="${esc(s.club_address || '')}" placeholder="ex : Gymnase…, code postal et ville"></div>
         <div class="form-grid">
           <div class="field"><label for="st-pres">Président(e)</label><input class="input" id="st-pres" name="president_name" value="${esc(s.president_name || '')}"></div>
-          <div class="field"><label for="st-legal">N° RNA ou SIRET</label><input class="input" id="st-legal" name="club_legal_id" value="${esc(s.club_legal_id || '')}" placeholder="W343…"></div>
+          <div class="field"><label for="st-legal">N° RNA</label><input class="input" id="st-legal" name="club_legal_id" value="${esc(s.club_legal_id || '')}" placeholder="W343…"></div>
         </div>
+        ${'club_siret' in s ? `<div class="field"><label for="st-siret">N° SIRET <span class="muted">(si le club en a un)</span></label><input class="input" id="st-siret" name="club_siret" value="${esc(s.club_siret || '')}" inputmode="numeric" placeholder="14 chiffres"></div>` : ''}
         <div class="field"><label for="st-mail">E-mail du club</label><input class="input" id="st-mail" name="club_email" type="email" value="${esc(s.club_email || '')}"></div>
         <button class="btn btn-primary" type="submit">Enregistrer</button>
       </form>

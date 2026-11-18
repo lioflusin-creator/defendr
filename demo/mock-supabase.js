@@ -17,7 +17,7 @@ if (!db || !db.members) {
 }
 const files = new Map(); // fichiers ajoutés pendant la visite (non conservés)
 // Bases de démo créées avant l'ajout des documents du club
-if (db.club_settings?.[0]) { const s0 = db.club_settings[0]; s0.club_documents ??= {}; if (s0.federation_label === undefined) s0.federation_label = 'la fédération'; }
+if (db.club_settings?.[0]) { const s0 = db.club_settings[0]; s0.club_documents ??= {}; s0.club_siret ??= ''; if (s0.federation_label === undefined) s0.federation_label = 'la fédération'; }
 
 function save() { try { localStorage.setItem(DB_KEY, JSON.stringify(db)); } catch {} }
 save();
@@ -185,6 +185,11 @@ export function createClient() {
     rpc: async (fn, args = {}) => {
       if (fn === 'public_club_info') { const s = db.club_settings[0] || {}; return { data: { club_name: s.club_name, fee_new: s.fee_new, fee_returning: s.fee_returning, fee_jobseeker: s.fee_jobseeker, fee_student: s.fee_student, club_email: s.club_email, bank_holder: s.bank_holder, bank_iban: s.bank_iban, bank_bic: s.bank_bic, bank_name: s.bank_name, club_documents: s.club_documents || {} }, error: null }; }
       if (fn === 'renewal_info') { const m = table('members').find(x => x.renewal_token === args.p_token); return { data: m ? Object.fromEntries(['first_name', 'last_name', 'birth_date', 'gender', 'phone', 'email', 'address', 'tshirt_size', 'emergency_contact', 'emergency_phone', 'guardian_name', 'guardian_phone', 'guardian_email', 'pickup_persons'].map(k => [k, m[k] ?? null])) : null, error: null }; }
+      if (fn === 'create_receipt') { // reçus de cotisation numérotés sans trou, par année
+        const d = today(), y = Number(d.slice(0, 4)), n = table('receipts').filter(r => r.year === y).reduce((t, r) => Math.max(t, r.seq), 0) + 1;
+        const r = { id: uuid(), year: y, seq: n, number: `${y}-${String(n).padStart(3, '0')}`, issued_on: d, member_id: args.p_member_id, data: clone(args.p_data || {}), created_by: DEMO_USER.id, created_at: nowIso() };
+        table('receipts').push(r); save(); return { data: clone(r), error: null };
+      }
       if (fn === 'restore_backup') {
         const p = args.payload || {};
         if (!Array.isArray(p.members)) return { data: null, error: { message: 'Fichier de sauvegarde invalide : onglet Membres introuvable.' } };

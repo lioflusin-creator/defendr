@@ -59,6 +59,8 @@ export async function downloadBackup(btn) {
     if (prospects) sheets['Prospects'] = clean(prospects);
     const { data: stages } = await sb.from('stages').select('*').order('stage_date'); // absent tant que migration-11.sql n'est pas exécuté
     if (stages) { sheets['Stages'] = clean(stages); sheets['Envois stages'] = clean((await sb.from('stage_sends').select('*').order('sent_at')).data || []); }
+    const { data: receipts } = await sb.from('receipts').select('*').order('created_at'); // absent tant que migration-14.sql n'est pas exécuté
+    if (receipts) sheets['Reçus de cotisation'] = clean(receipts.map(r => ({ numero: r.number, date: r.issued_on, membre: nameOf(r.member_id) || `${r.data?.first_name || ''} ${r.data?.last_name || ''}`.trim(), montant: r.data?.amount, ...r })));
     const wb = XLSX.utils.book_new();
     for (const [name, rows] of Object.entries(sheets)) {
       const ws = XLSX.utils.json_to_sheet(rows.length ? rows : [{ info: 'Aucune donnée' }]);

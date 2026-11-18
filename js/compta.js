@@ -2,6 +2,7 @@
 import { $, $$, S, activeSeason, closeModal, confirmBox, esc, fail, fmtDate, fmtMoney, fullName, icon, isoDay, openModal, parseDay, readForm, sb, toast } from './core.js';
 import { go, head, route } from './shell.js';
 import { printAgDossier, printDoc } from './print.js';
+import { receiptForm } from './receipts.js';
 
 /* =====================================================================
    Comptabilité
@@ -52,7 +53,7 @@ export async function viewAccounting(view) {
 
   const H = accStatsHtml(T, D.season);
   view.innerHTML = head('Comptabilité', `<span id="acc-sub">${H.sub}</span>`,
-    `<button class="btn" id="bilan">${icon('chart')}Bilan comptable</button><button class="btn" id="pdf">${icon('file')}Export PDF</button>`) + `
+    `<button class="btn" id="recu">${icon('file')}Reçu de cotisation</button><button class="btn" id="bilan">${icon('chart')}Bilan comptable</button><button class="btn" id="pdf">${icon('file')}Export PDF</button>`) + `
     <div class="grid acc-stats mb" id="acc-stats">${H.cards}
     </div>
     <div class="toolbar between">
@@ -127,6 +128,7 @@ export async function viewAccounting(view) {
   $$('[data-st]', view).forEach(b => b.onclick = () => { A.status = b.dataset.st; route(); });
   $('#arch').onchange = e => { A.archives = e.target.checked; route(); };
   $('#add').onclick = () => A.tab === 'paiements' ? paymentForm(null) : expenseForm(null);
+  $('#recu').onclick = () => receiptForm();
   $('#bilan').onclick = () => go('/bilan');
   $('#pdf').onclick = () => exportPdf(D);
 }
@@ -150,7 +152,7 @@ export async function paymentForm(p, defaults = {}) {
       <label class="check full"><input type="checkbox" name="bank_checked" ${v.bank_checked ? 'checked' : ''}><span>Pointé sur le relevé bancaire</span></label>
       <div class="field full"><label for="pf-no">Notes <span class="muted" id="pf-no-req">${v.member_id ? '' : '(origine obligatoire : ex. Mairie de Clermont)'}</span></label><input class="input" id="pf-no" name="notes" value="${esc(v.notes || '')}" placeholder="${v.member_id ? '' : 'ex : Subvention Mairie de Clermont-l’Hérault'}"></div>
     </form>`,
-    foot: `${p ? `<button class="icon-btn" id="pf-del" aria-label="Supprimer" title="Supprimer">${icon('trash')}</button><button class="btn" id="pf-arch">${p.archived ? 'Désarchiver' : 'Archiver'}</button>` : ''}<button class="btn" data-close>Annuler</button><button class="btn btn-primary" id="pf-save">Enregistrer</button>`,
+    foot: `${p?.member_id && p.status === 'payé' ? `<button class="btn" id="pf-rc">${icon('file')}Reçu</button>` : ''}${p ? `<button class="icon-btn" id="pf-del" aria-label="Supprimer" title="Supprimer">${icon('trash')}</button><button class="btn" id="pf-arch">${p.archived ? 'Désarchiver' : 'Archiver'}</button>` : ''}<button class="btn" data-close>Annuler</button><button class="btn btn-primary" id="pf-save">Enregistrer</button>`,
     onMount: root => {
       $('#pf-m', root).onchange = e => { const m = members.find(x => x.id === e.target.value); if (m?.fee_amount && !$('#pf-a', root).value) $('#pf-a', root).value = m.fee_amount; $('#pf-no-req', root).textContent = m ? '' : '(origine obligatoire : ex. Mairie de Clermont)'; };
       $('#pf-save', root).onclick = async () => {
@@ -173,6 +175,7 @@ export async function paymentForm(p, defaults = {}) {
         if (error) return fail(error);
         closeModal(); toast(n > 1 ? `${n} paiements enregistrés` : 'Recette enregistrée'); route();
       };
+      $('#pf-rc', root)?.addEventListener('click', () => { closeModal(); receiptForm({ member_id: p.member_id }); });
       if (p) {
         $('#pf-arch', root).onclick = async () => { const { error } = await sb.from('payments').update({ archived: !p.archived }).eq('id', p.id); if (error) return fail(error); closeModal(); toast(p.archived ? 'Paiement désarchivé' : 'Paiement archivé'); route(); };
         $('#pf-del', root).onclick = async () => {
