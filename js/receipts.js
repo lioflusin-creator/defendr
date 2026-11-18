@@ -141,15 +141,34 @@ async function deliver(r, phone) {
   const bytes = await buildReceiptPdf(r);
   const blob = new Blob([bytes], { type: 'application/pdf' }), name = receiptFileName(r);
   const mobile = matchMedia('(pointer: coarse)').matches || navigator.standalone;
-  const msg = `Bonjour ${r.data.first_name},\n\nvoici ton reçu de cotisation n° ${r.number} (${money(r.data.amount)}), à remettre à ton entreprise pour le remboursement.\n\nSportivement,\n${S.settings?.club_name || ''}`;
-  const wa = waUrl(phone || null, msg);
+  const club = S.settings?.club_name || '';
+  const text = link => `Bonjour ${r.data.first_name},\n\nvoici ton reçu de cotisation n° ${r.number} (${money(r.data.amount)}), à remettre à ton entreprise pour le remboursement${link ? ` :\n\n${link}\n\n(lien valable un an : pense à enregistrer le PDF)` : '.'}\n\nSportivement,\n${club}`;
+  // Sur ordinateur, WhatsApp ne permet pas à un site de joindre un fichier : on dépose le PDF
+  // dans l'espace privé du club et le message part avec un lien sécurisé vers ce PDF.
+  let link = null;
+  if (!mobile) {
+    try {
+      const path = `recus/${r.number}-${Math.random().toString(36).slice(2, 12)}/${name}`;
+      const up = await sb.storage.from('inscriptions').upload(path, blob, { contentType: 'application/pdf' });
+      if (up.error) throw up.error;
+      const { data, error } = await sb.storage.from('inscriptions').createSignedUrl(path, 365 * 24 * 3600);
+      if (error) throw error;
+      link = data.signedUrl.replace(/_/g, '%5F'); // pas de « _ » : WhatsApp le prendrait pour de l'italique et casserait le lien
+    } catch (e) { console.error(e); link = null; }
+  }
+  const wa = waUrl(phone || null, text(link));
+  const who = `<strong>${esc(r.data.first_name)} ${esc(r.data.last_name)}</strong>`;
   openModal({
     title: `Reçu n° ${r.number} créé`, size: 'sm',
-    body: `<p style="margin-top:0">Le reçu de <strong>${esc(r.data.first_name)} ${esc(r.data.last_name)}</strong> (${money(r.data.amount)}) est prêt.</p>
-      <p class="small muted">${mobile ? 'Touchez <strong>Envoyer sur WhatsApp</strong>, choisissez WhatsApp puis la conversation de l’adhérent : le PDF part avec le message. Si le message n’apparaît pas, il est copié : appuyez longuement dans la zone de texte et choisissez « Coller ».' : 'Téléchargez le PDF, puis ouvrez WhatsApp et joignez-le au message (glisser-déposer le fichier dans la conversation).'}</p>`,
-    foot: `${!mobile && wa ? `<a class="btn" href="${esc(wa)}" target="_blank" rel="noopener">${icon('chat')}Ouvrir WhatsApp</a>` : ''}<button class="btn btn-primary" id="rd-go">${icon(mobile ? 'chat' : 'file')}${mobile ? 'Envoyer sur WhatsApp' : 'Télécharger le PDF'}</button>`,
+    body: `<p style="margin-top:0">Le reçu de ${who} (${money(r.data.amount)}) est prêt.</p>
+      <p class="small muted">${mobile ? 'Touchez <strong>Envoyer sur WhatsApp</strong>, choisissez WhatsApp puis la conversation de l’adhérent : le PDF part avec le message. Si le message n’apparaît pas, il est copié : appuyez longuement dans la zone de texte et choisissez « Coller ».'
+        : link ? `Cliquez sur <strong>Envoyer sur WhatsApp</strong> : la conversation${phone ? '' : ' (choisissez l’adhérent)'} s’ouvre avec le message et le lien du PDF, il ne reste qu’à appuyer sur Entrée.`
+        : 'Téléchargez le PDF, puis ouvrez WhatsApp et joignez-le au message (glisser-déposer le fichier dans la conversation).'}</p>`,
+    foot: mobile ? `<button class="btn btn-primary" id="rd-go">${icon('chat')}Envoyer sur WhatsApp</button>`
+      : `<button class="btn" id="rd-go">${icon('file')}Télécharger le PDF</button>${wa ? `<a class="btn ${link ? 'btn-primary' : ''}" href="${esc(wa)}" target="_blank" rel="noopener">${icon('chat')}${link ? 'Envoyer sur WhatsApp' : 'Ouvrir WhatsApp'}</a>` : ''}`,
     onMount: root => {
       $('#rd-go', root).onclick = async () => {
+        const msg = text(null);
         if (mobile) navigator.clipboard?.writeText(msg).catch(() => {}); // au cas où WhatsApp ne garde que le fichier
         try { if (await saveFile(blob, name, mobile ? msg : '')) toast(mobile ? 'Reçu envoyé' : 'Reçu téléchargé'); } catch (e) { fail(e); }
       };
