@@ -202,14 +202,17 @@ export async function buildReceiptPdf(r) {
   page.drawRectangle({ x: 0, y: H - 6, width: W, height: 6, color: ACCENT });
   let y = H - 58, tx = M;
   if (logo) { const k = Math.min(64 / logo.width, 64 / logo.height), w = logo.width * k, h = logo.height * k; page.drawImage(logo, { x: M, y: H - 40 - h, width: w, height: h }); tx = M + w + 14; }
-  text(c.name || 'Association', tx, y, 15, FB); y -= 15;
+  // Titre, numéro, date d'émission (à droite) ; l'identité du club, à gauche, ne déborde jamais dessus
+  const xr = W - M, title = 'REÇU DE COTISATION', dateLine = `Date d’émission : ${longDate(r.issued_on)}`;
+  const maxW = xr - Math.max(width(title, 17, FB), width(dateLine, 9.5)) - 24 - tx;
+  const name = c.name || 'Association';
+  let ns = 15; while (ns > 10 && (wrap(name, ns, maxW, FB).length > 2 || wrap(name, ns, maxW, FB).some(l => FB.widthOfTextAtSize(l, ns) > maxW))) ns -= 0.5;
+  y = para(name, tx, y, maxW, ns, FB, DARK, 1.2) + ns * 1.2 - 15;
   text('Association loi 1901', tx, y, 9.5, FI, GREY); y -= 13;
-  for (const l of [c.address, [c.rna && 'RNA : ' + c.rna, c.siret && 'SIRET : ' + c.siret].filter(Boolean).join('   ·   '), c.email].filter(Boolean)) { y = para(l, tx, y, 260, 9, F, GREY, 1.3); }
-  // Titre, numéro, date d'émission (à droite)
-  const xr = W - M;
-  right('REÇU DE COTISATION', xr, H - 58, 17, FB);
+  for (const l of [c.address, [c.rna && 'RNA : ' + c.rna, c.siret && 'SIRET : ' + c.siret].filter(Boolean).join('   ·   '), c.email].filter(Boolean)) { y = para(l, tx, y, maxW, 9, F, GREY, 1.3); }
+  right(title, xr, H - 58, 17, FB);
   right(`N° ${r.number}`, xr, H - 78, 13, FB, ACCENT);
-  right(`Date d’émission : ${longDate(r.issued_on)}`, xr, H - 94, 9.5, F, GREY);
+  right(dateLine, xr, H - 94, 9.5, F, GREY);
 
   y = Math.min(y, H - 130) - 18;
   page.drawLine({ start: { x: M, y }, end: { x: xr, y }, thickness: 0.8, color: LINE });
