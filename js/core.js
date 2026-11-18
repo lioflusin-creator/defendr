@@ -150,11 +150,11 @@ export function closeModal() { $('#modal-root').innerHTML = ''; document.removeE
 /* Enregistrer un fichier créé par l'appli. Sur téléphone (iPhone surtout, et dans l'appli installée
    sur l'écran d'accueil), un téléchargement direct ne marche pas bien : on passe par le menu Partager,
    d'où l'on peut « Enregistrer dans Fichiers », l'envoyer par mail, etc. Renvoie true si le fichier est parti. */
-export async function saveFile(blob, filename) {
+export async function saveFile(blob, filename, text = '') { // text : message joint au fichier (WhatsApp…)
   const file = new File([blob], filename, { type: blob.type });
   const mobile = matchMedia('(pointer: coarse)').matches || navigator.standalone;
   if (mobile && navigator.canShare?.({ files: [file] })) {
-    const share = () => navigator.share({ files: [file], title: filename }).then(() => true, e => e?.name === 'AbortError' ? false : Promise.reject(e));
+    const share = () => navigator.share(text ? { files: [file], text } : { files: [file], title: filename }).then(() => true, e => e?.name === 'AbortError' ? false : Promise.reject(e));
     try { return await share(); }
     catch (e) {
       if (e?.name !== 'NotAllowedError') throw e;

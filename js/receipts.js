@@ -146,11 +146,12 @@ async function deliver(r, phone) {
   openModal({
     title: `Reçu n° ${r.number} créé`, size: 'sm',
     body: `<p style="margin-top:0">Le reçu de <strong>${esc(r.data.first_name)} ${esc(r.data.last_name)}</strong> (${money(r.data.amount)}) est prêt.</p>
-      <p class="small muted">${mobile ? 'Touchez <strong>Envoyer le PDF</strong>, puis choisissez WhatsApp et la conversation de l’adhérent.' : 'Téléchargez le PDF, puis ouvrez WhatsApp et joignez-le au message (glisser-déposer le fichier dans la conversation).'}</p>`,
-    foot: `${!mobile && wa ? `<a class="btn" href="${esc(wa)}" target="_blank" rel="noopener">${icon('chat')}Ouvrir WhatsApp</a>` : ''}<button class="btn btn-primary" id="rd-go">${icon(mobile ? 'up' : 'file')}${mobile ? 'Envoyer le PDF' : 'Télécharger le PDF'}</button>`,
+      <p class="small muted">${mobile ? 'Touchez <strong>Envoyer sur WhatsApp</strong>, choisissez WhatsApp puis la conversation de l’adhérent : le PDF part avec le message. Si le message n’apparaît pas, il est copié : appuyez longuement dans la zone de texte et choisissez « Coller ».' : 'Téléchargez le PDF, puis ouvrez WhatsApp et joignez-le au message (glisser-déposer le fichier dans la conversation).'}</p>`,
+    foot: `${!mobile && wa ? `<a class="btn" href="${esc(wa)}" target="_blank" rel="noopener">${icon('chat')}Ouvrir WhatsApp</a>` : ''}<button class="btn btn-primary" id="rd-go">${icon(mobile ? 'chat' : 'file')}${mobile ? 'Envoyer sur WhatsApp' : 'Télécharger le PDF'}</button>`,
     onMount: root => {
       $('#rd-go', root).onclick = async () => {
-        try { if (await saveFile(blob, name)) toast(mobile ? 'Reçu envoyé' : 'Reçu téléchargé'); } catch (e) { fail(e); }
+        if (mobile) navigator.clipboard?.writeText(msg).catch(() => {}); // au cas où WhatsApp ne garde que le fichier
+        try { if (await saveFile(blob, name, mobile ? msg : '')) toast(mobile ? 'Reçu envoyé' : 'Reçu téléchargé'); } catch (e) { fail(e); }
       };
     },
   });
@@ -246,8 +247,7 @@ export async function buildReceiptPdf(r) {
   y -= 42;
 
   // Attestation
-  const payer = d.company ? `${d.company}, pour le compte de ${who}` : who;
-  y = para(`L’association ${c.name || ''} certifie avoir reçu de ${payer} la somme de ${money(d.amount)} au titre de la cotisation d’adhésion décrite ci-dessus (${String(d.period || '').replace(/^./, x => x.toLowerCase())}). Cette somme n’est pas soumise à la TVA.`, M, y, xr - M, 10, F, DARK, 1.45);
+  y = para(`L’association ${c.name || ''} certifie avoir reçu de ${who} la somme de ${money(d.amount)} au titre de la cotisation d’adhésion décrite ci-dessus (${String(d.period || '').replace(/^./, x => x.toLowerCase())}). Cette somme n’est pas soumise à la TVA.`, M, y, xr - M, 10, F, DARK, 1.45);
   y -= 26;
 
   // Signature
