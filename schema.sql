@@ -878,3 +878,19 @@ begin
 end $$;
 revoke all on function public.backup_export(text) from public;
 grant execute on function public.backup_export(text) to anon, authenticated;
+
+-- ---------- Signatures du président et du trésorier (migration-15) ----------
+alter table public.club_settings
+  add column if not exists treasurer_name text;
+
+insert into storage.buckets (id, name, public, file_size_limit, allowed_mime_types)
+  values ('signatures', 'signatures', false, 1048576, array['image/png'])
+  on conflict (id) do update set public = false;
+drop policy if exists "admin lit signatures" on storage.objects;
+drop policy if exists "admin ajoute signatures" on storage.objects;
+drop policy if exists "admin modifie signatures" on storage.objects;
+drop policy if exists "admin supprime signatures" on storage.objects;
+create policy "admin lit signatures" on storage.objects for select to authenticated using (bucket_id = 'signatures' and public.is_admin());
+create policy "admin ajoute signatures" on storage.objects for insert to authenticated with check (bucket_id = 'signatures' and public.is_admin());
+create policy "admin modifie signatures" on storage.objects for update to authenticated using (bucket_id = 'signatures' and public.is_admin());
+create policy "admin supprime signatures" on storage.objects for delete to authenticated using (bucket_id = 'signatures' and public.is_admin());

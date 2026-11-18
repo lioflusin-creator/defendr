@@ -15,7 +15,7 @@ if (!db || !db.members) {
   db = buildDemoData(DEMO_USER.id);
   try { localStorage.setItem('defendr-demo-derniere-sauvegarde', new Date().toISOString()); } catch {} // pas de rappel de sauvegarde dans la démo
 }
-const files = new Map(); // fichiers ajoutés pendant la visite (non conservés)
+const files = new Map(), blobs = new Map(); // fichiers ajoutés pendant la visite (non conservés)
 // Bases de démo créées avant l'ajout des documents du club
 if (db.club_settings?.[0]) { const s0 = db.club_settings[0]; s0.club_documents ??= {}; s0.club_siret ??= ''; if (s0.federation_label === undefined) s0.federation_label = 'la fédération'; }
 
@@ -205,10 +205,12 @@ export function createClient() {
     },
     storage: {
       from: () => ({
-        upload: async (path, blob) => { files.set(path, URL.createObjectURL(blob)); return { data: { path }, error: null }; },
+        upload: async (path, blob) => { files.set(path, URL.createObjectURL(blob)); blobs.set(path, blob); return { data: { path }, error: null }; },
+        download: async path => blobs.has(path) ? { data: blobs.get(path), error: null } : { data: null, error: { message: 'Object not found' } },
+        list: async () => ({ data: [], error: null }),
         createSignedUrl: async path => files.has(path) ? { data: { signedUrl: files.get(path) }, error: null } : { data: null, error: { message: 'Fichier de démonstration indisponible' } },
         getPublicUrl: path => ({ data: { publicUrl: files.get(path) || '#fichier-de-demonstration-indisponible' } }),
-        remove: async paths => { (paths || []).forEach(p => files.delete(p)); return { data: [], error: null }; },
+        remove: async paths => { (paths || []).forEach(p => { files.delete(p); blobs.delete(p); }); return { data: [], error: null }; },
       }),
     },
     auth: {

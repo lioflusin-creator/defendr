@@ -4,6 +4,7 @@ import { seasonStart } from './inscriptions.js';
 import { XLSX_URL } from './backup.js';
 import { bilanHtml, bilanPrintHtml, loadAccounting, seasonBilan } from './compta.js';
 import { attendanceSummary } from './stats.js';
+import { loadSignatures, signatureImg } from './signatures.js';
 
 /* =====================================================================
    Impression (attestations, rapports)
@@ -105,7 +106,8 @@ export function printTshirtList(rows, label, onChange = null) {
   });
 }
 
-export function printAttestation(m, pays, season) {
+export async function printAttestation(m, pays, season) {
+  await loadSignatures();
   const s = S.settings || {};
   const total = pays.reduce((t, p) => t + Number(p.amount), 0);
   const minor = (ageOf(m.birth_date) ?? 99) < 18;
@@ -130,7 +132,7 @@ export function printAttestation(m, pays, season) {
       </tbody></table>
       <p>Cette attestation est délivrée à l’intéressé(e) pour servir et valoir ce que de droit.</p>
       <p style="margin-top:28px">Fait${city ? ' à ' + esc(city) : ''}, le ${today}.</p>
-      <div class="attest-sign"><div>Le/la président(e)</div><div class="sign-box">${esc(s.president_name || '')}</div></div>
+      <div class="attest-sign"><div>Le/la président(e)</div><div class="sign-box">${signatureImg('president')}${esc(s.president_name || '')}</div></div>
     </div>`, 'print-attest');
 }
 
@@ -197,7 +199,7 @@ export async function printAgDossier(btn) {
   if (btn) { btn.disabled = true; btn.textContent = 'Préparation…'; }
   try {
     const season = activeSeason() || S.seasons[0] || null, s = S.settings || {};
-    const [stats, bil] = await Promise.all([attendanceSummary(), seasonBilan(season)]);
+    const [stats, bil] = await Promise.all([attendanceSummary(), seasonBilan(season), loadSignatures()]);
     const report = await agReportHtml(stats, { finance: false });
     const today = new Date().toLocaleDateString('fr-FR', { day: 'numeric', month: 'long', year: 'numeric' });
     printDoc(`

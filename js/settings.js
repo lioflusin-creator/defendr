@@ -2,6 +2,7 @@
 import { $, $$, GITHUB_REPO, S, closeModal, confirmBox, esc, fail, fmtDate, fmtMoney, icon, isAdmin, isPresident, openModal, readForm, roleLabel, sb, toast } from './core.js';
 import { bindGlobal, head, loadRefs, route } from './shell.js';
 import { CLUB_DOCS, docUrl } from './inscriptions.js';
+import { renderSignatures } from './signatures.js';
 import { bindAdac } from './adac.js';
 import { autoBackupHtml, bindAutoBackup, downloadBackup, lastBackupText, restoreFromFile } from './backup.js';
 import { planSections } from './plan.js';
@@ -45,6 +46,7 @@ export async function viewSettings(view) {
         <div class="field"><label for="st-addr">Adresse du club</label><input class="input" id="st-addr" name="club_address" value="${esc(s.club_address || '')}" placeholder="ex : Gymnase…, code postal et ville"></div>
         <div class="form-grid">
           <div class="field"><label for="st-pres">Président(e)</label><input class="input" id="st-pres" name="president_name" value="${esc(s.president_name || '')}"></div>
+          ${'treasurer_name' in s ? `<div class="field"><label for="st-treas">Trésorier(ère)</label><input class="input" id="st-treas" name="treasurer_name" value="${esc(s.treasurer_name || '')}"></div>` : ''}
           <div class="field"><label for="st-legal">N° RNA</label><input class="input" id="st-legal" name="club_legal_id" value="${esc(s.club_legal_id || '')}" placeholder="W343…"></div>
         </div>
         ${'club_siret' in s ? `<div class="field"><label for="st-siret">N° SIRET <span class="muted">(si le club en a un)</span></label><input class="input" id="st-siret" name="club_siret" value="${esc(s.club_siret || '')}" inputmode="numeric" placeholder="14 chiffres"></div>` : ''}
@@ -151,7 +153,9 @@ export async function viewSettings(view) {
           <button class="btn btn-primary" type="submit">Enregistrer</button>
         </form>
       </div>
+      <div class="card card-pad" id="sig-card"><h2>Signatures</h2><p class="small muted">Chargement…</p></div>
     </div>`;
+  if (isAdmin()) renderSignatures($('#sig-card')).catch(fail); else $('#sig-card').remove();
   $('#backup').onclick = () => downloadBackup($('#backup'));
   bindAutoBackup(view);
   bindAdac(view);

@@ -30,6 +30,7 @@ Application web installable sur iPhone (Safari → Partager → Sur l'écran d'a
 | `js/stages.js` | Stages |
 | `js/compta.js` | Comptabilité et bilan |
 | `js/receipts.js` | Reçus de cotisation numérotés (PDF pour l’employeur de l’adhérent) |
+| `js/signatures.js` | Signatures du président et du trésorier (ajoutées aux reçus, attestations et comptes) |
 | `js/print.js` | Impressions et export Excel des membres |
 | `js/backup.js` | Sauvegarde et restauration |
 | `js/settings.js` | Paramètres |

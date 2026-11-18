@@ -3,6 +3,7 @@ import { $, $$, S, activeSeason, closeModal, confirmBox, esc, fail, fmtDate, fmt
 import { go, head, route } from './shell.js';
 import { printAgDossier, printDoc } from './print.js';
 import { receiptForm } from './receipts.js';
+import { loadSignatures, signatureImg } from './signatures.js';
 
 /* =====================================================================
    Comptabilité
@@ -433,7 +434,7 @@ export async function viewBilan(view) {
   $('#bl-dossier', view).onclick = e => printAgDossier(e.currentTarget);
 }
 
-export function printBilan(B, P, X) { printDoc(bilanPrintHtml(B, P, X), 'print-bilan'); }
+export async function printBilan(B, P, X) { await loadSignatures(); printDoc(bilanPrintHtml(B, P, X), 'print-bilan'); }
 export function bilanPrintHtml(B, P, X) {
   const s = S.settings || {};
   const today = new Date().toLocaleDateString('fr-FR', { day: 'numeric', month: 'long', year: 'numeric' });
@@ -448,6 +449,6 @@ export function bilanPrintHtml(B, P, X) {
       <h2 class="section-title">2. Bilan</h2>${X.bilan}
       <h2 class="section-title">3. Annexe</h2>${X.annexe}
       <p style="margin-top:22px">Comptes arrêtés par le bureau et soumis à l’approbation de l’assemblée générale du …………………………</p>
-      <div class="bilan-signs"><div>Le/la président(e)<div class="sign-box">${esc(s.president_name || '')}</div></div><div>Le/la trésorier(ère)<div class="sign-box"></div></div></div>
+      <div class="bilan-signs"><div>Le/la président(e)<div class="sign-box">${signatureImg('president')}${esc(s.president_name || '')}</div></div><div>Le/la trésorier(ère)<div class="sign-box">${signatureImg('tresorier')}${esc(s.treasurer_name || '')}</div></div></div>
     </div>`;
 }

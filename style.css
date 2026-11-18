@@ -468,3 +468,13 @@ a.btn.disabled { opacity: .45; }
   #print-root.print-dossier .bilan-print { font-size: 10.5px; }
   #print-root.print-dossier .bilan-print .section-title { margin: 14px 0 6px; font-size: 13px; }
 }
+
+/* ---------- Signatures ---------- */
+.sig-row { border-top: 1px solid var(--line); padding: 12px 0; }
+.sig-head { display: flex; align-items: center; justify-content: space-between; gap: 10px; flex-wrap: wrap; }
+.sig-preview { margin-top: 8px; min-height: 56px; display: flex; align-items: center; justify-content: center; background: #fff; border: 1px dashed var(--line); border-radius: 10px; padding: 6px; }
+.sig-preview img { max-height: 70px; max-width: 100%; }
+.sig-pad { width: 100%; height: 220px; background: #fff; border: 1px dashed var(--muted); border-radius: 12px; touch-action: none; cursor: crosshair; display: block; }
+.sign-box { flex-direction: column; align-items: center; justify-content: flex-end; }
+.sign-img { max-height: 58px; max-width: 200px; display: block; margin: 0 auto 2px; }
+.bilan-signs .sign-box { display: flex; height: auto; min-height: 60px; }

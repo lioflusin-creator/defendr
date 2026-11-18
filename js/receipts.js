@@ -2,6 +2,7 @@
 import { $, $$, S, activeSeason, closeModal, esc, fail, fmtDate, fmtMoney, fullName, icon, openModal, readForm, roleLabel, saveFile, sb, toast } from './core.js';
 import { docUrl } from './inscriptions.js';
 import { waUrl } from './whatsapp.js';
+import { SIGNERS, loadSignature, signerKey } from './signatures.js';
 
 const METHODS = ['Virement', 'Chèque', 'Espèces', 'Carte bancaire', 'Prélèvement', 'Autre'];
 export const VAT_MENTIONS = [
@@ -94,7 +95,7 @@ export async function receiptForm(pre = {}) {
         const data = {
           ...d, amount: Math.round(d.amount * 100) / 100,
           club: { name: s.club_name || '', address: s.club_address || '', rna: s.club_legal_id || '', siret: s.club_siret || '', email: s.club_email || '' },
-          signer: { name: S.profile?.full_name || '', role: roleLabel(S.profile?.role) },
+          signer: { name: S.profile?.full_name || '', role: roleLabel(S.profile?.role), key: signerKey(S.profile?.role) },
         };
         const btn = e.currentTarget; btn.disabled = true; btn.textContent = 'Création…';
         try {
@@ -275,9 +276,17 @@ export async function buildReceiptPdf(r) {
   // Signature
   const sx = W / 2 + 10;
   text(`Fait le ${longDate(r.issued_on)}`, sx, y, 10); y -= 15;
-  text(`Pour l’association, ${d.signer?.role ? 'le/la ' + d.signer.role.toLowerCase() : 'le bureau'}`, sx, y, 10, F, GREY); y -= 14;
-  if (d.signer?.name) text(d.signer.name, sx, y, 10.5, FB);
-  page.drawRectangle({ x: sx, y: y - 62, width: xr - sx, height: 50, borderColor: LINE, borderWidth: 0.6, borderDashArray: [3, 3] });
+  // Signature de la personne qui a émis le reçu ; à défaut, celle de l'autre membre du bureau (Paramètres → Signatures)
+  const own = d.signer?.key || signerKey(d.signer?.role);
+  let sig = null, signer = { role: d.signer?.role, name: d.signer?.name };
+  for (const k of [own, ...SIGNERS.map(g => g.key).filter(k => k !== own)].filter(Boolean)) {
+    const got = await loadSignature(k).catch(() => null);
+    if (got) { sig = await doc.embedPng(got.bytes).catch(() => null); if (sig && k !== own) { const g = SIGNERS.find(x => x.key === k); signer = { role: g.label, name: S.settings?.[g.nameField] || '' }; } if (sig) break; }
+  }
+  text(`Pour l’association, ${signer.role ? 'le/la ' + signer.role.toLowerCase() : 'le bureau'}`, sx, y, 10, F, GREY); y -= 14;
+  if (signer.name) text(signer.name, sx, y, 10.5, FB);
+  if (sig) { const k = Math.min((xr - sx - 20) / sig.width, 58 / sig.height); page.drawImage(sig, { x: sx + 4, y: y - 66, width: sig.width * k, height: sig.height * k }); }
+  else page.drawRectangle({ x: sx, y: y - 62, width: xr - sx, height: 50, borderColor: LINE, borderWidth: 0.6, borderDashArray: [3, 3] });
 
   // Pied de page
   page.drawLine({ start: { x: M, y: 46 }, end: { x: xr, y: 46 }, thickness: 0.6, color: LINE });
