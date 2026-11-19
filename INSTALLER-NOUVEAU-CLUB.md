@@ -48,6 +48,8 @@ Vous avez maintenant votre copie : `https://github.com/VOTRE-PSEUDO/defendr`.
 5. Collez (Ctrl+V) et cliquez sur **Run** en bas à droite. Si un avertissement « destructive operation » s’affiche, confirmez avec **Run this query**.
 6. Résultat attendu : **Success. No rows returned**.
 
+Ce fichier contient toute la structure à jour : aucun fichier `migration-N.sql` n’est à exécuter lors de l’installation.
+
 ## 5. Régler les e-mails de connexion
 
 Supabase envoie un e-mail pour confirmer chaque nouveau compte et pour les mots de passe oubliés. Il doit savoir où renvoyer les gens.
@@ -111,7 +113,7 @@ Les améliorations du logiciel ne s’installent pas toutes seules dans votre co
 
 1. Ouvrez `https://github.com/VOTRE-PSEUDO/defendr`.
 2. Si GitHub indique que votre copie est en retard (« This branch is X commits behind »), cliquez sur **Sync fork** puis **Update branch**.
-3. Regardez si un nouveau fichier `migration-N.sql` est apparu, avec un numéro **supérieur à 8**. Si oui, exécutez-le une fois dans Supabase, comme à l’étape 4 (avec le lien `…/main/migration-N.sql`).
+3. Regardez si un nouveau fichier `migration-N.sql` est apparu, avec un numéro **supérieur à 16**. Si oui, exécutez-le une fois dans Supabase, comme à l’étape 4 (avec le lien `…/main/migration-N.sql`).
 4. Fermez puis rouvrez le logiciel, deux fois, pour charger la nouvelle version.
 
 Votre fichier `config.js` est conservé lors des mises à jour.
