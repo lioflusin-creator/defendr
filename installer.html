@@ -238,7 +238,7 @@ async function dispatch(club) {
     await sleep(3000);
     const runs = await gh(`/repos/${FULL}/actions/workflows/${WORKFLOW}/runs?event=workflow_dispatch&per_page=5`);
     const run = (runs.data?.workflow_runs || []).find(x => new Date(x.created_at).getTime() >= since);
-    if (run) { mark('actions', 'ok'); return run.id; }
+    if (run) { mark('actions', 'ok', ''); return run.id; }
   }
   fail('actions', `L’installation automatique ne démarre pas. <a href="https://github.com/${esc(FULL)}/actions" target="_blank" rel="noopener">Ouvrez cette page</a> : si un bouton vert propose d’activer les workflows, cliquez dessus, puis réessayez.`);
 }
