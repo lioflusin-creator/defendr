@@ -7,7 +7,7 @@ import { bindHealthFiles, healthFileButtons, openRegistrations, renewalPhone } f
 import { dropoutInfo, dropoutText, memberAttendance } from './planning.js';
 import { waUrl } from './whatsapp.js';
 import { gradeEntryForm, nextLevel, promoteForm } from './grades.js';
-import { exportMembersXlsx, printAttestation, printTshirtList } from './print.js';
+import { exportMembersPdf, exportMembersXlsx, printAttestation, printTshirtList } from './print.js';
 import { METHODS, paymentForm } from './compta.js';
 
 /* =====================================================================
@@ -48,7 +48,7 @@ export async function viewMembers(view) {
   if (!filters.find(f => f.k === S.memberFilter)) S.memberFilter = 'tous';
 
   view.innerHTML = head('Membres', `${members.filter(m => m.status === 'actif').length} membres actifs · ${members.length} inscrits`,
-    `${window.DEFENDR_DEMO ? '' : `<button class="btn" id="print-tshirts">${icon('file')}Imprimer (T-shirts)</button>`}<button class="btn" id="export-members">${icon('file')}Exporter (Excel)</button><button class="btn btn-primary" id="new-member">${icon('plus')}Nouveau membre</button>`) + `
+    `${window.DEFENDR_DEMO ? '' : `<button class="btn" id="print-tshirts">${icon('file')}Imprimer (T-shirts)</button>`}<button class="btn" id="export-members-pdf" title="PDF avec uniquement le nom et le prénom des membres affichés">${icon('file')}PDF (noms)</button><button class="btn" id="export-members">${icon('file')}Exporter (Excel)</button><button class="btn btn-primary" id="new-member">${icon('plus')}Nouveau membre</button>`) + `
     <div id="reg-banner"></div>
     <div class="toolbar">
       <input class="input" type="search" id="m-search" placeholder="Rechercher un membre…" value="${esc(S.memberSearch)}" aria-label="Rechercher un membre">
@@ -131,6 +131,11 @@ export async function viewMembers(view) {
       $$('[data-f]', view).forEach(c => { const x = filters.find(y => y.k === c.dataset.f); if (x) $('.n', c).textContent = members.filter(x.fn).length; });
       draw();
     });
+  };
+  $('#export-members-pdf').onclick = () => {
+    if (!shownRows.length) return toast('Aucun membre à exporter');
+    const f = filters.find(x => x.k === S.memberFilter);
+    exportMembersPdf(shownRows, f.label + (S.memberSearch ? ` · recherche « ${S.memberSearch} »` : ''), $('#export-members-pdf'));
   };
   $('#export-members').onclick = () => {
     if (!shownRows.length) return toast('Aucun membre à exporter');

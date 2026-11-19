@@ -68,6 +68,55 @@ export async function exportMembersXlsx(rows, label, balance, btn) {
   if (btn) { btn.disabled = false; btn.innerHTML = html; }
 }
 
+/* PDF de la liste affichée : uniquement Nom + Prénom, prêt à envoyer par e-mail / WhatsApp */
+export const JSPDF_URL = 'https://cdn.jsdelivr.net/npm/jspdf@2.5.2/+esm';
+export async function exportMembersPdf(rows, label, btn) {
+  const html = btn?.innerHTML;
+  if (btn) { btn.disabled = true; btn.textContent = 'Préparation…'; }
+  try {
+    const mod = await import(JSPDF_URL);
+    const JsPDF = mod.jsPDF || mod.default;
+    const doc = new JsPDF({ unit: 'mm', format: 'a4' });
+    const sorted = rows.slice().sort((a, b) => (a.last_name || '').localeCompare(b.last_name || '', 'fr') || (a.first_name || '').localeCompare(b.first_name || '', 'fr'));
+    const club = S.settings?.club_name || 'Club';
+    const today = new Date().toLocaleDateString('fr-FR', { day: 'numeric', month: 'long', year: 'numeric' });
+    const W = 210, H = 297, M = 18, LINE = 7.5;
+    const colNum = M, colNom = M + 14, colPrenom = M + 95;
+    let y = 0, page = 0;
+    const header = () => {
+      page++;
+      y = M;
+      if (page === 1) {
+        doc.setFont('helvetica', 'bold'); doc.setFontSize(18); doc.text(club, M, y + 4);
+        doc.setFont('helvetica', 'normal'); doc.setFontSize(10); doc.setTextColor(110);
+        doc.text(`Liste des membres — ${label} · ${rows.length} membre${rows.length > 1 ? 's' : ''} · ${today}`, M, y + 11);
+        doc.setTextColor(0);
+        y += 20;
+      }
+      doc.setFillColor(235, 237, 240); doc.rect(M, y, W - 2 * M, LINE, 'F');
+      doc.setFont('helvetica', 'bold'); doc.setFontSize(10);
+      doc.text('#', colNum + 2, y + 5); doc.text('Nom', colNom, y + 5); doc.text('Prénom', colPrenom, y + 5);
+      doc.setFont('helvetica', 'normal'); doc.setFontSize(11);
+      y += LINE;
+    };
+    header();
+    sorted.forEach((m, i) => {
+      if (y + LINE > H - M) { doc.addPage(); header(); }
+      doc.setTextColor(130); doc.text(String(i + 1), colNum + 2, y + 5); doc.setTextColor(0);
+      doc.text(doc.splitTextToSize((m.last_name || '').toUpperCase(), colPrenom - colNom - 4)[0] || '', colNom, y + 5);
+      doc.text(doc.splitTextToSize(m.first_name || '', W - M - colPrenom)[0] || '', colPrenom, y + 5);
+      doc.setDrawColor(225); doc.line(M, y + LINE, W - M, y + LINE);
+      y += LINE;
+    });
+    const pages = doc.getNumberOfPages();
+    if (pages > 1) for (let p = 1; p <= pages; p++) { doc.setPage(p); doc.setFontSize(9); doc.setTextColor(130); doc.text(`${p} / ${pages}`, W - M, H - 8, { align: 'right' }); }
+    const slug = label.normalize('NFD').replace(/\p{Diacritic}/gu, '').replace(/[^\w]+/g, '-').toLowerCase();
+    const saved = await saveFile(doc.output('blob'), `Membres-${slug}-${isoDay(new Date())}.pdf`);
+    if (saved) toast(`PDF de ${rows.length} membre${rows.length > 1 ? 's' : ''} prêt`);
+  } catch (e) { fail(e); }
+  if (btn) { btn.disabled = false; btn.innerHTML = html; }
+}
+
 export function printTshirtList(rows, label, onChange = null) {
   // Colonne « Remis » : vraie case à cocher dans l'aperçu (téléphone) une fois migration-12.sql exécuté
   const canTick = rows.length > 0 && 'tshirt_given_at' in rows[0];
