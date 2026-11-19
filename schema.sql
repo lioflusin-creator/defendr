@@ -894,3 +894,8 @@ create policy "admin lit signatures" on storage.objects for select to authentica
 create policy "admin ajoute signatures" on storage.objects for insert to authenticated with check (bucket_id = 'signatures' and public.is_admin());
 create policy "admin modifie signatures" on storage.objects for update to authenticated using (bucket_id = 'signatures' and public.is_admin());
 create policy "admin supprime signatures" on storage.objects for delete to authenticated using (bucket_id = 'signatures' and public.is_admin());
+
+-- ---------- migration-16 : suivi des déclarations à l'ADAC ----------
+alter table public.members
+  add column if not exists adac_sent_at date,
+  add column if not exists adac_season_id uuid references public.seasons(id) on delete set null;

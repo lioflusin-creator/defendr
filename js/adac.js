@@ -1,5 +1,5 @@
 // Defendr — Liaison ADAC National
-import { $, S, closeModal, esc, fail, openModal, readForm, sb, toast } from './core.js';
+import { $, S, activeSeason, closeModal, esc, fail, isoDay, openModal, readForm, sb, toast } from './core.js';
 import { go, route } from './shell.js';
 
 /* =====================================================================
@@ -35,9 +35,25 @@ export async function adacCall(body) {
 export const adacPayload = m => ({ first_name: m.first_name, last_name: m.last_name, gender: m.gender, birth_date: m.birth_date, address: m.address, email: m.email || m.guardian_email, tshirt_size: m.tshirt_size });
 
 export async function adacMembers() {
-  const { data, error } = await sb.from('members').select('first_name, last_name, gender, birth_date, address, email, guardian_email, tshirt_size').eq('status', 'actif').order('last_name');
+  const { data, error } = await sb.from('members').select('id, first_name, last_name, gender, birth_date, address, email, guardian_email, tshirt_size').eq('status', 'actif').order('last_name');
   if (error) throw error;
-  return data.map(adacPayload);
+  return data;
+}
+
+// Suivi des déclarations (colonnes ajoutées par migration-16.sql)
+export const hasAdacCol = m => !!m && 'adac_sent_at' in m;
+export function adacDeclared(m) {
+  const se = activeSeason();
+  return se ? m.adac_season_id === se.id : !!m.adac_sent_at;
+}
+// Note « déclaré à l'ADAC aujourd'hui » sur les fiches envoyées (sans bloquer si la migration n'est pas faite)
+export async function adacMark(ids) {
+  ids = ids.filter(Boolean);
+  if (!ids.length) return null;
+  const patch = { adac_sent_at: isoDay(new Date()), adac_season_id: activeSeason()?.id || null };
+  const { error } = await sb.from('members').update(patch).in('id', ids);
+  if (error) { console.warn('Suivi ADAC non enregistré (migration-16.sql exécutée ?)', error); return null; }
+  return patch;
 }
 
 // Envoi d'un seul membre (création d'une fiche ou bouton de la fiche membre).
@@ -47,6 +63,7 @@ export async function adacSendMember(m, btn) {
   try {
     const r = await adacCall({ members: [adacPayload(m)] });
     const x = r.results?.[0] || {};
+    if (x.action && x.action !== 'ignore') { const p = await adacMark([m.id]); if (p) Object.assign(m, p); }
     const msg = {
       ajout: `ADAC : ${x.name} ajouté au tableau (${x.detail})`,
       complete: `ADAC : ${x.name} déjà présent, cases complétées (${x.detail})`,
@@ -75,7 +92,7 @@ export async function adacSync(btn) {
   try {
     members = await adacMembers();
     if (!members.length) { btn.disabled = false; return toast('Aucun membre actif à envoyer.', 'error'); }
-    preview = await adacCall({ dryRun: true, members });
+    preview = await adacCall({ dryRun: true, members: members.map(adacPayload) });
   } catch (e) { btn.disabled = false; return toast(e.message, 'error'); }
   btn.disabled = false;
   const todo = preview.ajouts + preview.completes;
@@ -89,7 +106,9 @@ export async function adacSync(btn) {
       go.onclick = async () => {
         go.disabled = true; go.textContent = 'Envoi en cours…';
         try {
-          const r = await adacCall({ members });
+          const r = await adacCall({ members: members.map(adacPayload) });
+          // Le script renvoie un résultat par membre, dans l'ordre d'envoi
+          await adacMark(members.filter((_, i) => r.results?.[i] && r.results[i].action !== 'ignore').map(x => x.id));
           closeModal();
           toast(`ADAC : ${r.ajouts} ajouté${r.ajouts > 1 ? 's' : ''}, ${r.completes} complété${r.completes > 1 ? 's' : ''}`);
           openModal({ title: 'Envoi terminé', body: `<p class="small muted">Le tableur de l’ADAC a été mis à jour.</p>${adacList(r.results, ADAC_DONE)}`, foot: '<button class="btn btn-primary" data-close>Fermer</button>' });

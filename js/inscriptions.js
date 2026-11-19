@@ -2,6 +2,7 @@
 import { $, $$, S, activeSeason, ageOf, closeModal, confirmBox, esc, fail, fmtDate, fmtMoney, fullName, icon, isAdmin, isoDay, openModal, sb, toast, waLink } from './core.js';
 import { go, head, loadRefs, route } from './shell.js';
 import { feeOptions } from './members.js';
+import { adacSendMember } from './adac.js';
 import { inviteForm, markProspectRegistered, saveProspectInvite } from './prospects.js';
 import { waUrl } from './whatsapp.js';
 
@@ -337,8 +338,11 @@ export async function openRegistrations() {
           <dt>Paiement prévu</dt><dd>${esc(d.payment_method || '—')}</dd>
           <dt>Droit à l’image</dt><dd>${yes(d.consent_image)}</dd><dt>Connu par</dt><dd>${esc(d.how_found || '—')}</dd>
         </dl>${d.health_files?.length ? `<div class="row wrap mt" style="gap:6px">${healthFileButtons(d.health_files)}</div>` : ''}</div>`; }).join('') : '<div class="empty">Aucune demande en attente.</div>',
-    foot: `<button class="btn" data-close>Fermer</button>`,
+    // Envoi au tableau des adhérents ADAC des fiches validées (si la liaison est installée)
+    foot: `${data.length && S.settings.adac_url ? '<label class="check" style="margin-right:auto;padding:0"><input type="checkbox" id="reg-adac" checked><span>Envoyer au tableau des adhérents ADAC les fiches validées</span></label>' : ''}<button class="btn" data-close>Fermer</button>`,
     onMount: root => {
+      const toAdac = () => !!$('#reg-adac', root)?.checked;
+      const sendAdac = (m, id) => adacSendMember({ ...m, id }).then(x => { if (x && location.hash.includes(id)) route(); });
       $$('.reg-card', root).forEach(card => bindHealthFiles(card, data.find(x => x.id === card.dataset.r)?.data?.health_files));
       $$('[data-accept]', root).forEach(b => b.onclick = async () => {
         const r = data.find(x => x.id === b.dataset.accept), d = r.data || {};
@@ -360,13 +364,18 @@ export async function openRegistrations() {
           const { error } = await sb.from('members').update(member).eq('id', prev.id);
           if (error) { b.disabled = false; return fail(error); }
           await sb.from('registrations').delete().eq('id', r.id);
-          closeModal(); toast(`Réinscription de ${d.first_name} enregistrée`); return go('/membres/' + prev.id);
+          const adac = toAdac();
+          closeModal(); toast(`Réinscription de ${d.first_name} enregistrée`); go('/membres/' + prev.id);
+          if (adac) sendAdac(member, prev.id);
+          return;
         }
         const { data: created, error } = await sb.from('members').insert(member).select('id').single();
         if (error) { b.disabled = false; return fail(error); }
         await sb.from('registrations').delete().eq('id', r.id); // la fiche membre remplace la demande
         await markProspectRegistered(d.phone, created.id);
+        const adac = toAdac();
         closeModal(); toast(`Fiche ${/^[aeiouyhàâäéèêëîïôöùûü]/i.test(d.first_name || '') ? 'd’' : 'de '}${d.first_name} créée`); go('/membres/' + created.id);
+        if (adac) sendAdac(member, created.id);
       });
       $$('[data-refuse]', root).forEach(b => b.onclick = async () => {
         const r = data.find(x => x.id === b.dataset.refuse);

@@ -1,6 +1,6 @@
 // Mise en cache de l'appli pour un démarrage rapide sur téléphone.
 // Les données (Supabase) ne sont jamais mises en cache : elles restent toujours à jour.
-const VERSION = 'defendr-v60';
+const VERSION = 'defendr-v61';
 
 const SHELL = ['./', 'index.html', 'style.css', 'app.js', 'js/adac.js', 'js/backup.js', 'js/compta.js', 'js/core.js', 'js/dashboard.js', 'js/grades.js', 'js/guide.js', 'js/history.js', 'js/inscriptions.js', 'js/members.js', 'js/plan.js', 'js/planning.js', 'js/print.js', 'js/prospects.js', 'js/receipts.js', 'js/referentiels.js', 'js/settings.js', 'js/shell.js', 'js/signatures.js', 'js/stages.js', 'js/stats.js', 'js/whatsapp.js', 'config.js', 'manifest.webmanifest', 'icons/icon-192.png', 'icons/apple-touch-icon.png'];
 
