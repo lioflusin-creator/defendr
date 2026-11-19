@@ -58,7 +58,7 @@ jobs:
             fi
             PASS=$(openssl rand -hex 24)
             BODY=$(jq -n --arg n "$PROJECT_NAME" --arg o "$ORG" --arg p "$PASS" --arg s "https://$SITE/" \
-              '{name: $n, organization_slug: $o, db_pass: $p, region_selection: {type: "specific", code: "eu-west-3"}, auth_site_url: $s}')
+              '{name: $n, organization_slug: $o, db_pass: $p, region_selection: {type: "specific", code: "eu-west-3"}, auth_site_url: $s, data_api_revoke_default_privileges: false}')
             code=$(curl -sS -o /tmp/project.json -w '%{http_code}' "${H[@]}" -X POST "$API/projects" -d "$BODY")
             if [ "$code" != 201 ] && [ "$code" != 200 ]; then
               echo "::error::Supabase n'a pas pu créer la base (code $code). Si vous avez déjà 2 projets gratuits, supprimez-en un dans Supabase puis relancez."
