@@ -10,6 +10,8 @@ Ce guide installe **votre propre copie**, vide, avec **votre propre base de donn
 
 > **Important avant de commencer** : si votre navigateur propose de **traduire** les pages de GitHub ou de Supabase, refusez (ou choisissez « Ne jamais traduire ce site »). Une page traduite traduit aussi le code, qui ne fonctionne plus.
 
+> **Le plus simple : l’assistant d’installation automatique.** Ouvrez https://lioflusin-creator.github.io/defendr/installer.html sur un ordinateur et suivez les 4 étapes (environ 15 minutes). Il fait à votre place les étapes 2 à 7 ci-dessous. Le guide manuel qui suit reste utile si l’assistant rencontre un problème.
+
 Dans ce guide, remplacez **VOTRE-PSEUDO** par le nom de votre compte GitHub (étape 1).
 
 ---

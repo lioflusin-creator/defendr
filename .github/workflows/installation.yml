@@ -1,0 +1,137 @@
+# Installation automatique d'un nouveau club (lancée par la page installer.html).
+# Crée la base Supabase du club, y installe les tables (schema.sql), règle les
+# e-mails de connexion et écrit config.js. Peut être relancée sans risque :
+# chaque étape déjà faite est simplement retrouvée.
+name: Installation Defendr
+
+on:
+  workflow_dispatch:
+    inputs:
+      club_name:
+        description: Nom du club
+        required: true
+
+permissions:
+  contents: write
+
+concurrency: installation
+
+jobs:
+  installer:
+    # Jamais sur le dépôt d'origine : uniquement dans la copie d'un nouveau club
+    if: github.repository != 'lioflusin-creator/defendr'
+    runs-on: ubuntu-latest
+    timeout-minutes: 40
+    env:
+      SB: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
+      CLUB: ${{ inputs.club_name }}
+      API: https://api.supabase.com/v1
+    steps:
+      - name: Récupérer le logiciel
+        uses: actions/checkout@v4
+
+      - name: Vérifier la clé Supabase
+        run: |
+          set -euo pipefail
+          [ -n "$SB" ] || { echo "::error::La clé Supabase n'a pas été transmise. Relancez l'installation depuis la page."; exit 1; }
+          code=$(curl -sS -o /tmp/orgs.json -w '%{http_code}' -H "Authorization: Bearer $SB" "$API/organizations")
+          if [ "$code" != 200 ]; then echo "::error::Supabase refuse la clé (code $code). Créez une nouvelle clé et relancez."; cat /tmp/orgs.json; exit 1; fi
+          OWNER="${GITHUB_REPOSITORY_OWNER,,}"; REPO="${GITHUB_REPOSITORY#*/}"
+          echo "SITE=$OWNER.github.io/$REPO" >> "$GITHUB_ENV"
+          echo "PROJECT_NAME=Defendr" >> "$GITHUB_ENV"
+
+      - name: Créer la base de données du club
+        run: |
+          set -euo pipefail
+          H=(-H "Authorization: Bearer $SB" -H "Content-Type: application/json")
+          # Base déjà créée lors d'un essai précédent ?
+          curl -sS "${H[@]}" "$API/projects" > /tmp/projects.json
+          REF=$(jq -r --arg n "$PROJECT_NAME" '[.[] | select(.name == $n and .status != "REMOVED" and .status != "GOING_DOWN")][0].ref // empty' /tmp/projects.json)
+          if [ -n "$REF" ]; then
+            echo "Base déjà créée : $REF"
+          else
+            ORG=$(jq -r '.[0].slug // empty' /tmp/orgs.json)
+            if [ -z "$ORG" ]; then
+              curl -sS "${H[@]}" -X POST "$API/organizations" -d "$(jq -n --arg n "$CLUB" '{name: $n}')" > /tmp/org.json
+              ORG=$(jq -r '.slug // empty' /tmp/org.json)
+              [ -n "$ORG" ] || { echo "::error::Impossible de créer l'organisation Supabase."; cat /tmp/org.json; exit 1; }
+            fi
+            PASS=$(openssl rand -hex 24)
+            BODY=$(jq -n --arg n "$PROJECT_NAME" --arg o "$ORG" --arg p "$PASS" --arg s "https://$SITE/" \
+              '{name: $n, organization_slug: $o, db_pass: $p, region_selection: {type: "specific", code: "eu-west-3"}, auth_site_url: $s, data_api_revoke_default_privileges: false}')
+            code=$(curl -sS -o /tmp/project.json -w '%{http_code}' "${H[@]}" -X POST "$API/projects" -d "$BODY")
+            if [ "$code" != 201 ] && [ "$code" != 200 ]; then
+              echo "::error::Supabase n'a pas pu créer la base (code $code). Si vous avez déjà 2 projets gratuits, supprimez-en un dans Supabase puis relancez."
+              cat /tmp/project.json; exit 1
+            fi
+            REF=$(jq -r '.ref' /tmp/project.json)
+            echo "Base créée : $REF (Paris)"
+          fi
+          echo "REF=$REF" >> "$GITHUB_ENV"
+
+      - name: Attendre que la base soit prête (2 à 5 minutes)
+        run: |
+          set -euo pipefail
+          H=(-H "Authorization: Bearer $SB" -H "Content-Type: application/json")
+          for i in $(seq 1 90); do
+            st=$( (curl -sS "${H[@]}" "$API/projects/$REF" | jq -r '.status // "?"') || echo "?")
+            echo "État : $st"
+            [ "$st" = ACTIVE_HEALTHY ] && break
+            sleep 10
+          done
+          [ "$st" = ACTIVE_HEALTHY ] || { echo "::error::La base n'est pas prête après 15 minutes. Relancez l'installation dans quelques minutes."; exit 1; }
+          for i in $(seq 1 30); do
+            code=$(curl -sS -o /tmp/q.json -w '%{http_code}' "${H[@]}" -X POST "$API/projects/$REF/database/query" -d '{"query":"select 1 as ok"}')
+            [ "$code" = 201 ] || [ "$code" = 200 ] && exit 0
+            sleep 10
+          done
+          echo "::error::La base ne répond pas encore. Relancez l'installation dans quelques minutes."; cat /tmp/q.json; exit 1
+
+      - name: Installer les tables
+        run: |
+          set -euo pipefail
+          H=(-H "Authorization: Bearer $SB" -H "Content-Type: application/json")
+          curl -sS "${H[@]}" -X POST "$API/projects/$REF/database/query" -d '{"query":"select to_regclass('\''public.members'\'') is not null as ok"}' > /tmp/check.json
+          if [ "$(jq -r '.[0].ok // false' /tmp/check.json)" = true ]; then
+            echo "Tables déjà installées."
+          else
+            jq -Rs '{query: .}' schema.sql > /tmp/schema.json
+            code=$(curl -sS -o /tmp/schema-res.json -w '%{http_code}' "${H[@]}" -X POST "$API/projects/$REF/database/query" --data-binary @/tmp/schema.json)
+            if [ "$code" != 201 ] && [ "$code" != 200 ]; then echo "::error::Erreur pendant l'installation des tables (code $code)."; cat /tmp/schema-res.json; exit 1; fi
+            echo "Tables installées."
+          fi
+          BODY=$(jq -n --arg c "$CLUB" '{query: "update public.club_settings set club_name = $1 where id = 1 and club_name = '\''Mon club'\''", parameters: [$c]}')
+          curl -sS -o /dev/null "${H[@]}" -X POST "$API/projects/$REF/database/query" -d "$BODY" || true
+
+      - name: Régler les e-mails de connexion
+        run: |
+          set -euo pipefail
+          BODY=$(jq -n --arg s "https://$SITE/" --arg r "https://$SITE/**" '{site_url: $s, uri_allow_list: $r}')
+          code=$(curl -sS -o /tmp/auth.json -w '%{http_code}' -H "Authorization: Bearer $SB" -H "Content-Type: application/json" -X PATCH "$API/projects/$REF/config/auth" -d "$BODY")
+          if [ "$code" != 200 ]; then echo "::error::Impossible de régler les e-mails de connexion (code $code)."; cat /tmp/auth.json; exit 1; fi
+
+      - name: Relier le logiciel à la base
+        run: |
+          set -euo pipefail
+          curl -sS -H "Authorization: Bearer $SB" "$API/projects/$REF/api-keys" > /tmp/keys.json
+          KEY=$(jq -r '([.[] | select(.name == "anon" and (.api_key // "") != "")][0].api_key) // ([.[] | select(.type == "publishable" and (.api_key // "") != "")][0].api_key) // empty' /tmp/keys.json)
+          [ -n "$KEY" ] || { echo "::error::Clé publique du projet introuvable."; jq '[.[] | {name, type}]' /tmp/keys.json; exit 1; }
+          {
+            echo "// Connexion à la base de données Supabase du club."
+            echo "// La clé « anon » est publique par conception : la sécurité repose sur les règles d'accès (RLS) de la base."
+            echo "export const SUPABASE_URL = 'https://$REF.supabase.co';"
+            echo "export const SUPABASE_ANON_KEY = '$KEY';"
+            echo ""
+            echo "// Adresse du site de CE club (sans https://). Sert de garde-fou : une copie du logiciel"
+            echo "// installée ailleurs refuse de se connecter à cette base tant que ce fichier n'a pas été adapté."
+            echo "export const SITE = '$SITE';"
+          } > config.js
+          if git diff --quiet config.js; then echo "config.js déjà à jour."; exit 0; fi
+          git config user.name "Installation Defendr"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git commit -m "Relie Defendr à la base de données du club" config.js
+          git push
+          {
+            echo "## Installation terminée"
+            echo "Adresse du logiciel : https://$SITE/"
+          } >> "$GITHUB_STEP_SUMMARY"

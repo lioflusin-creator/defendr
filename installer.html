@@ -1,0 +1,314 @@
+<!doctype html>
+<html lang="fr">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Installer Defendr pour votre club</title>
+  <meta name="robots" content="noindex">
+  <link rel="icon" type="image/png" href="icons/icon-192.png">
+  <link rel="stylesheet" href="style.css">
+  <style>
+    body { background: var(--bg); color: var(--text); font-family: var(--font); margin: 0; }
+    .wrap { max-width: 720px; margin: 0 auto; padding: 32px 18px 80px; }
+    .top { display: flex; align-items: center; gap: 14px; margin-bottom: 8px; }
+    h1 { font-family: var(--display); text-transform: uppercase; font-size: 28px; line-height: 1.1; margin: 0; }
+    .lead { color: var(--muted); margin: 0 0 24px; }
+    .step { margin-bottom: 16px; }
+    .step h2 { display: flex; align-items: center; gap: 10px; font-size: 18px; margin: 0 0 10px; }
+    .num { flex: none; width: 28px; height: 28px; border-radius: 50%; background: var(--accent); color: var(--accent-ink); display: grid; place-items: center; font-size: 14px; font-weight: 700; }
+    .step.done .num { background: var(--ok); }
+    .step ol, .step ul { margin: 0 0 12px; padding-left: 22px; }
+    .step li { margin-bottom: 6px; }
+    .row { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; }
+    .note { font-size: 13px; color: var(--muted); }
+    .box { border-radius: 10px; padding: 12px 14px; margin: 10px 0; font-size: 14px; }
+    .box.warn { background: var(--warn-soft); color: var(--text); }
+    .box.err { background: var(--danger-soft); color: var(--text); }
+    .box.ok { background: var(--ok-soft); color: var(--text); }
+    .prog { list-style: none; padding: 0 !important; margin: 0; }
+    .prog li { display: flex; gap: 10px; align-items: flex-start; padding: 7px 0; border-bottom: 1px solid var(--line); }
+    .prog li:last-child { border-bottom: 0; }
+    .ico { flex: none; width: 20px; text-align: center; font-weight: 700; }
+    .ico.wait { color: var(--muted); } .ico.run { color: var(--accent); } .ico.ok { color: var(--ok); } .ico.err { color: var(--danger); }
+    .spin { display: inline-block; width: 12px; height: 12px; border: 2px solid var(--accent); border-right-color: transparent; border-radius: 50%; animation: s 0.8s linear infinite; }
+    @keyframes s { to { transform: rotate(360deg); } }
+    .sub { font-size: 13px; color: var(--muted); }
+    code { background: var(--surface-2); padding: 1px 5px; border-radius: 5px; font-size: 13px; }
+    .big { font-size: 18px; font-weight: 700; word-break: break-all; }
+    [hidden] { display: none !important; }
+  </style>
+</head>
+<body>
+<div class="wrap">
+  <div class="top"><div class="logo-mark">D</div><h1>Installer Defendr</h1></div>
+  <p class="lead">Cet assistant installe votre propre copie de Defendr, vide, avec la base de données de votre club. Comptez 15 minutes, dont 5 d’attente. Faites-le sur un ordinateur.</p>
+
+  <div class="box warn"><strong>Avant de commencer :</strong> si votre navigateur propose de traduire GitHub ou Supabase, refusez. Gardez cette page ouverte : les liens ci-dessous s’ouvrent dans un nouvel onglet.</div>
+
+  <!-- Étape 1 -->
+  <section class="card card-pad step" id="s1">
+    <h2><span class="num">1</span>Créer vos deux comptes gratuits</h2>
+    <ol>
+      <li>Créez un compte <strong>GitHub</strong> avec l’e-mail du club : <a href="https://github.com/signup" target="_blank" rel="noopener">github.com/signup</a>. Choisissez un nom simple, sans espace (ex : <code>club-krav-beziers</code>) : il fera partie de l’adresse du logiciel. Confirmez votre e-mail.</li>
+      <li>Ouvrez <a href="https://supabase.com/dashboard/sign-in" target="_blank" rel="noopener">supabase.com</a> et cliquez sur <strong>Continue with GitHub</strong>. Si Supabase vous demande de créer une organisation : nom du club, type <em>Personal</em>, plan <strong>Free</strong>. <strong>Ne créez pas de projet</strong> : l’assistant s’en charge.</li>
+    </ol>
+  </section>
+
+  <!-- Étape 2 -->
+  <section class="card card-pad step" id="s2">
+    <h2><span class="num">2</span>Donner une clé GitHub à l’assistant</h2>
+    <ol>
+      <li><a class="btn btn-sm" href="https://github.com/settings/tokens/new?description=Installation%20Defendr&amp;scopes=repo,workflow" target="_blank" rel="noopener">Ouvrir la page de création de clé GitHub</a> (connectez-vous si besoin).</li>
+      <li>Les cases nécessaires sont déjà cochées. À <strong>Expiration</strong>, choisissez <strong>7 days</strong>.</li>
+      <li>Tout en bas, cliquez sur <strong>Generate token</strong>, puis copiez la clé (elle commence par <code>ghp_</code>).</li>
+    </ol>
+    <div class="field"><label for="gh">Clé GitHub</label><input class="input" id="gh" type="password" autocomplete="off" spellcheck="false" placeholder="ghp_…"><span class="help" id="gh-help"></span></div>
+  </section>
+
+  <!-- Étape 3 -->
+  <section class="card card-pad step" id="s3">
+    <h2><span class="num">3</span>Donner une clé Supabase à l’assistant</h2>
+    <ol>
+      <li><a class="btn btn-sm" href="https://supabase.com/dashboard/account/tokens" target="_blank" rel="noopener">Ouvrir la page des clés Supabase</a></li>
+      <li>Cliquez sur <strong>Generate new token</strong>, nommez-la <code>Defendr</code>, validez, puis copiez la clé (elle commence par <code>sbp_</code>).</li>
+    </ol>
+    <div class="field"><label for="sb">Clé Supabase</label><input class="input" id="sb" type="password" autocomplete="off" spellcheck="false" placeholder="sbp_…"></div>
+    <p class="note">Les deux clés restent dans votre navigateur et chez GitHub : elles ne sont envoyées à personne d’autre. Vous les supprimerez à la fin.</p>
+  </section>
+
+  <!-- Étape 4 -->
+  <section class="card card-pad step" id="s4">
+    <h2><span class="num">4</span>Lancer l’installation</h2>
+    <div class="field"><label for="club">Nom du club</label><input class="input" id="club" placeholder="ex : Krav Maga Béziers" maxlength="80"></div>
+    <button class="btn btn-primary btn-block" id="go">Installer Defendr</button>
+    <div id="err" class="box err" hidden></div>
+  </section>
+
+  <!-- Avancement -->
+  <section class="card card-pad step" id="progress" hidden>
+    <h2>Installation en cours</h2>
+    <p class="note">Ne fermez pas cette page. Vous pouvez la laisser dans un coin de l’écran.</p>
+    <ul class="prog" id="prog"></ul>
+    <div id="actions-box" class="box warn" hidden>
+      <strong>Un clic de votre part :</strong> GitHub demande d’autoriser les automatismes de votre copie.
+      <ol style="margin:8px 0">
+        <li><a id="actions-link" href="#" target="_blank" rel="noopener">Ouvrez cette page GitHub</a>.</li>
+        <li>Cliquez sur le bouton vert <strong>I understand my workflows, go ahead and enable them</strong>.</li>
+        <li>Revenez ici et cliquez sur « C’est fait ».</li>
+      </ol>
+      <button class="btn btn-primary" id="actions-done">C’est fait, continuer</button>
+    </div>
+    <div id="fail" class="box err" hidden></div>
+  </section>
+
+  <!-- Fin -->
+  <section class="card card-pad step" id="final" hidden>
+    <h2><span class="num">✓</span>Defendr est installé</h2>
+    <p>L’adresse du logiciel de votre club :</p>
+    <p class="big"><a id="app-link" href="#" target="_blank" rel="noopener"></a></p>
+    <ol>
+      <li>Ouvrez cette adresse et cliquez sur <strong>Créer un compte</strong>. <strong>Le premier compte créé devient président(e)</strong> : faites-le vous-même, maintenant.</li>
+      <li>Confirmez votre e-mail avec le message reçu (regardez aussi dans les indésirables), puis connectez-vous.</li>
+      <li>Allez dans <strong>Paramètres</strong> : coordonnées du club, cotisations, puis créez la saison en cours.</li>
+      <li>Supprimez les deux clés données à l’assistant, elles ne servent plus :
+        <a href="https://github.com/settings/tokens" target="_blank" rel="noopener">clés GitHub</a> (bouton <em>Delete</em> sur « Installation Defendr ») et
+        <a href="https://supabase.com/dashboard/account/tokens" target="_blank" rel="noopener">clés Supabase</a> (« Defendr »).</li>
+    </ol>
+    <p class="note">Si la page affiche une erreur 404, attendez 2 minutes et rechargez : GitHub termine la mise en ligne. Sur iPhone : ouvrez l’adresse dans Safari, Partager, puis « Sur l’écran d’accueil ».</p>
+  </section>
+
+  <p class="note">Un problème ? Le guide d’installation manuelle décrit les mêmes étapes, une par une : <a href="https://github.com/lioflusin-creator/defendr/blob/main/INSTALLER-NOUVEAU-CLUB.md" target="_blank" rel="noopener">INSTALLER-NOUVEAU-CLUB.md</a>. Vous pouvez relancer l’assistant autant de fois que nécessaire : ce qui est déjà fait est conservé.</p>
+</div>
+
+<script type="module">
+const UPSTREAM = 'lioflusin-creator/defendr';
+const WORKFLOW = 'installation.yml';
+const SODIUM_URL = 'https://cdn.jsdelivr.net/npm/libsodium-wrappers@0.7.15/+esm';
+const $ = s => document.querySelector(s);
+const sleep = ms => new Promise(r => setTimeout(r, ms));
+const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+
+let GH = '', FULL = '', LOGIN = '';
+
+class Stop extends Error {}
+async function gh(path, opts = {}) {
+  const r = await fetch('https://api.github.com' + path, {
+    ...opts,
+    headers: { Authorization: 'Bearer ' + GH, Accept: 'application/vnd.github+json', 'X-GitHub-Api-Version': '2022-11-28', ...(opts.body ? { 'Content-Type': 'application/json' } : {}) },
+    body: opts.body ? JSON.stringify(opts.body) : undefined,
+  });
+  let data = null;
+  if (r.status !== 204) { try { data = await r.json(); } catch { data = null; } }
+  return { ok: r.ok, status: r.status, data, headers: r.headers };
+}
+
+/* ---------- Liste d'avancement ---------- */
+const STEPS = [
+  ['check', 'Vérification de la clé GitHub'],
+  ['fork', 'Copie du logiciel dans votre compte GitHub'],
+  ['secret', 'Transmission sécurisée de la clé Supabase'],
+  ['actions', 'Démarrage de l’installation automatique'],
+  ['run', 'Création et préparation de la base de données (environ 5 minutes)'],
+  ['pages', 'Mise en ligne du logiciel'],
+];
+function drawSteps() {
+  $('#prog').innerHTML = STEPS.map(([k, label]) => `<li id="p-${k}"><span class="ico wait">•</span><div><div>${esc(label)}</div><div class="sub" id="p-${k}-sub"></div></div></li>`).join('');
+}
+function mark(k, state, sub) {
+  const li = $('#p-' + k); if (!li) return;
+  const ico = li.querySelector('.ico');
+  ico.className = 'ico ' + state;
+  ico.innerHTML = state === 'run' ? '<span class="spin"></span>' : state === 'ok' ? '✓' : state === 'err' ? '✕' : '•';
+  if (sub !== undefined) $('#p-' + k + '-sub').innerHTML = sub;
+}
+function fail(k, html) {
+  mark(k, 'err');
+  $('#fail').innerHTML = html + '<div class="row" style="margin-top:10px"><button class="btn btn-primary" id="retry">Réessayer</button></div>';
+  $('#fail').hidden = false;
+  $('#retry').onclick = () => start();
+  $('#go').disabled = false;
+  throw new Stop();
+}
+
+/* ---------- Étapes ---------- */
+async function checkToken() {
+  mark('check', 'run');
+  const r = await gh('/user');
+  if (r.status === 401) fail('check', 'GitHub refuse la clé. Vérifiez que vous l’avez copiée en entier, ou créez-en une nouvelle (étape 2).');
+  if (!r.ok) fail('check', `GitHub ne répond pas comme prévu (code ${r.status}). Réessayez dans un instant.`);
+  LOGIN = r.data.login;
+  if (LOGIN.toLowerCase() === UPSTREAM.split('/')[0]) fail('check', 'Cette clé appartient au compte d’origine de Defendr. Utilisez le compte GitHub du nouveau club.');
+  const scopes = (r.headers.get('x-oauth-scopes') || '').split(',').map(s => s.trim());
+  if (r.headers.get('x-oauth-scopes') !== null && !(scopes.includes('repo') && scopes.includes('workflow')))
+    fail('check', 'La clé GitHub n’a pas les bonnes autorisations. Recréez-la avec le bouton de l’étape 2 (les cases <code>repo</code> et <code>workflow</code> doivent être cochées).');
+  mark('check', 'ok', `Compte GitHub : <strong>${esc(LOGIN)}</strong>`);
+}
+
+async function forkRepo() {
+  mark('fork', 'run');
+  // Copie déjà faite lors d'un essai précédent ?
+  let r = await gh(`/repos/${LOGIN}/defendr`);
+  if (r.ok && r.data.fork && r.data.parent?.full_name === UPSTREAM) FULL = r.data.full_name;
+  else if (r.ok) fail('fork', `Votre compte contient déjà un dépôt nommé « defendr » qui n’est pas une copie du logiciel. Renommez-le ou supprimez-le sur GitHub, puis réessayez.`);
+  else {
+    r = await gh(`/repos/${UPSTREAM}/forks`, { method: 'POST', body: { default_branch_only: true } });
+    if (!r.ok) fail('fork', `GitHub n’a pas pu copier le logiciel (code ${r.status}${r.data?.message ? ' : ' + esc(r.data.message) : ''}). Vérifiez que l’adresse e-mail de votre compte GitHub est confirmée.`);
+    FULL = r.data.full_name;
+  }
+  // Attendre que la copie soit complète
+  for (let i = 0; i < 40; i++) {
+    const c = await gh(`/repos/${FULL}/contents/.github/workflows/${WORKFLOW}`);
+    if (c.ok) { mark('fork', 'ok', `<a href="https://github.com/${esc(FULL)}" target="_blank" rel="noopener">github.com/${esc(FULL)}</a>`); return; }
+    mark('fork', 'run', 'GitHub prépare la copie…');
+    await sleep(3000);
+  }
+  fail('fork', 'La copie du logiciel prend plus de temps que prévu. Réessayez dans une minute.');
+}
+
+async function sendSecret(sbToken) {
+  mark('secret', 'run');
+  const k = await gh(`/repos/${FULL}/actions/secrets/public-key`);
+  if (!k.ok) fail('secret', `Impossible de préparer la transmission (code ${k.status}).`);
+  let sodium;
+  try { const mod = await import(SODIUM_URL); sodium = mod.default || mod; await sodium.ready; }
+  catch { fail('secret', 'Impossible de charger le module de chiffrement. Vérifiez votre connexion internet.'); }
+  const sealed = sodium.crypto_box_seal(sodium.from_string(sbToken), sodium.from_base64(k.data.key, sodium.base64_variants.ORIGINAL));
+  const r = await gh(`/repos/${FULL}/actions/secrets/SUPABASE_ACCESS_TOKEN`, { method: 'PUT', body: { encrypted_value: sodium.to_base64(sealed, sodium.base64_variants.ORIGINAL), key_id: k.data.key_id } });
+  if (!r.ok) fail('secret', `GitHub a refusé la clé Supabase (code ${r.status}).`);
+  mark('secret', 'ok', 'Chiffrée : seule l’installation automatique peut la lire.');
+}
+
+async function dispatch(club) {
+  mark('actions', 'run');
+  await gh(`/repos/${FULL}/actions/permissions`, { method: 'PUT', body: { enabled: true, allowed_actions: 'all' } });
+  await gh(`/repos/${FULL}/actions/workflows/${WORKFLOW}/enable`, { method: 'PUT' });
+  const since = Date.now() - 5000;
+  const r = await gh(`/repos/${FULL}/actions/workflows/${WORKFLOW}/dispatches`, { method: 'POST', body: { ref: 'main', inputs: { club_name: club } } });
+  if (!r.ok) {
+    // Copie neuve : GitHub exige un clic pour autoriser les automatismes
+    mark('actions', 'run', 'En attente de votre clic sur GitHub…');
+    $('#actions-link').href = `https://github.com/${FULL}/actions`;
+    $('#actions-box').hidden = false;
+    await new Promise(res => { $('#actions-done').onclick = res; });
+    $('#actions-box').hidden = true;
+    return dispatch(club);
+  }
+  // Retrouver l'exécution lancée
+  for (let i = 0; i < 30; i++) {
+    await sleep(3000);
+    const runs = await gh(`/repos/${FULL}/actions/workflows/${WORKFLOW}/runs?event=workflow_dispatch&per_page=5`);
+    const run = (runs.data?.workflow_runs || []).find(x => new Date(x.created_at).getTime() >= since);
+    if (run) { mark('actions', 'ok', ''); return run.id; }
+  }
+  fail('actions', `L’installation automatique ne démarre pas. <a href="https://github.com/${esc(FULL)}/actions" target="_blank" rel="noopener">Ouvrez cette page</a> : si un bouton vert propose d’activer les workflows, cliquez dessus, puis réessayez.`);
+}
+
+async function follow(runId) {
+  mark('run', 'run');
+  const t0 = Date.now();
+  for (;;) {
+    const [r, j] = await Promise.all([gh(`/repos/${FULL}/actions/runs/${runId}`), gh(`/repos/${FULL}/actions/runs/${runId}/jobs`)]);
+    const steps = j.data?.jobs?.[0]?.steps || [];
+    const cur = steps.find(s => s.status === 'in_progress') || steps.filter(s => s.status === 'completed').pop();
+    const min = Math.floor((Date.now() - t0) / 60000);
+    mark('run', 'run', `${cur && !/^(Set up|Complete|Post) /.test(cur.name) ? esc(cur.name) + ' · ' : ''}${min ? min + ' min' : 'démarrage'}`);
+    if (r.data?.status === 'completed') {
+      if (r.data.conclusion === 'success') { mark('run', 'ok', `Terminé en ${Math.max(1, min)} min`); return; }
+      const bad = steps.find(s => s.conclusion === 'failure');
+      fail('run', `L’étape « ${esc(bad?.name || 'installation')} » a échoué. <a href="${esc(r.data.html_url)}" target="_blank" rel="noopener">Voir le détail sur GitHub</a> (le message en rouge explique la cause), puis réessayez : ce qui est déjà fait est conservé.`);
+    }
+    await sleep(8000);
+  }
+}
+
+async function publish() {
+  mark('pages', 'run');
+  await gh(`/repos/${FULL}/actions/secrets/SUPABASE_ACCESS_TOKEN`, { method: 'DELETE' });
+  let r = await gh(`/repos/${FULL}/pages`, { method: 'POST', body: { build_type: 'legacy', source: { branch: 'main', path: '/' } } });
+  if (r.status === 409) r = await gh(`/repos/${FULL}/pages/builds`, { method: 'POST' });
+  if (!r.ok && r.status !== 409) fail('pages', `GitHub n’a pas pu mettre le site en ligne (code ${r.status}). Dans votre dépôt GitHub : Settings → Pages → Branch « main » → Save.`);
+  const url = `https://${FULL.split('/')[0].toLowerCase()}.github.io/${FULL.split('/')[1]}/`;
+  for (let i = 0; i < 40; i++) {
+    const b = await gh(`/repos/${FULL}/pages/builds/latest`);
+    if (b.data?.status === 'built') break;
+    if (b.data?.status === 'errored') break;
+    mark('pages', 'run', 'GitHub publie le site (1 à 2 minutes)…');
+    await sleep(6000);
+  }
+  mark('pages', 'ok', esc(url));
+  $('#app-link').href = url; $('#app-link').textContent = url;
+  $('#final').hidden = false;
+  $('#final').scrollIntoView({ behavior: 'smooth' });
+}
+
+async function start() {
+  $('#err').hidden = true; $('#fail').hidden = true; $('#final').hidden = true;
+  GH = $('#gh').value.trim();
+  const sbToken = $('#sb').value.trim(), club = $('#club').value.trim();
+  const errs = [];
+  if (!/^(ghp_|github_pat_|gho_)/.test(GH)) errs.push('La clé GitHub doit commencer par <code>ghp_</code> (étape 2).');
+  if (!/^sbp_/.test(sbToken)) errs.push('La clé Supabase doit commencer par <code>sbp_</code> (étape 3).');
+  if (!club) errs.push('Indiquez le nom du club.');
+  if (errs.length) { $('#err').innerHTML = errs.join('<br>'); $('#err').hidden = false; return; }
+  $('#go').disabled = true;
+  $('#progress').hidden = false; drawSteps();
+  $('#progress').scrollIntoView({ behavior: 'smooth' });
+  try {
+    await checkToken();
+    await forkRepo();
+    await sendSecret(sbToken);
+    const runId = await dispatch(club);
+    await follow(runId);
+    await publish();
+  } catch (e) {
+    if (e instanceof Stop) return;
+    console.error(e);
+    $('#fail').innerHTML = `Erreur inattendue : ${esc(e.message || e)}. Vérifiez votre connexion internet puis <button class="btn btn-sm" id="retry">Réessayer</button>`;
+    $('#fail').hidden = false; $('#retry').onclick = () => start();
+    $('#go').disabled = false;
+  }
+}
+$('#go').onclick = start;
+</script>
+</body>
+</html>
