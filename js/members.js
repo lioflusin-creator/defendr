@@ -1,5 +1,5 @@
 // Defendr — Membres
-import { adacSendMember } from './adac.js';
+import { adacDeclared, adacSendMember, hasAdacCol } from './adac.js';
 import { $, $$, S, activeSeason, ageOf, closeModal, confirmBox, discName, esc, fail, fmtDate, fmtDay, fmtMoney, fullName, icon, initials, isAdmin, isBirthdayMonth, isoDay, levelName, openModal, readForm, sb, toast, waLink } from './core.js';
 import { go, head, route } from './shell.js';
 import { hasHealthDoc, healthBadge, memberIssues, reminderLink } from './dashboard.js';
@@ -29,6 +29,9 @@ export async function viewMembers(view) {
   const balance = m => Number(m.fee_amount || 0) - (paidBy[m.id] || 0);
   // Colonne « T-shirt remis » présente une fois migration-12.sql exécuté
   const hasTshirtCol = !members.length || 'tshirt_given_at' in members[0];
+  // Colonnes « déclaré à l'ADAC » présentes une fois migration-16.sql exécuté
+  const adacCol = members.length ? hasAdacCol(members[0]) : false;
+  const notDeclared = m => adacCol && m.status === 'actif' && !adacDeclared(m);
 
   const filters = [
     { k: 'tous', label: 'Tous', fn: () => true },
@@ -39,6 +42,7 @@ export async function viewMembers(view) {
     { k: 'anniversaires', label: 'Anniversaires du mois', fn: m => isBirthdayMonth(m.birth_date) },
     { k: 'absents', label: 'Absents depuis 3 semaines', fn: m => !!dropouts?.[m.id] },
     ...(hasTshirtCol ? [{ k: 'tshirt', label: 'T-shirt à remettre', fn: m => m.status === 'actif' && !m.tshirt_given_at }] : []),
+    ...(adacCol ? [{ k: 'adac', label: 'Pas déclarés à l’ADAC', fn: notDeclared }] : []),
     { k: 'inactifs', label: 'Inactifs', fn: m => m.status === 'inactif' },
   ];
   if (!filters.find(f => f.k === S.memberFilter)) S.memberFilter = 'tous';
@@ -62,30 +66,41 @@ export async function viewMembers(view) {
     if (S.memberFilter === 'absents' && !dropouts) { box.innerHTML = '<div class="empty">Calcul des présences…</div>'; return; }
     if (!rows.length) { box.innerHTML = `<div class="empty">${members.length ? 'Aucun membre ne correspond.' : 'Aucun membre pour l’instant. Ajoutez le premier avec « Nouveau membre ».'}</div>`; return; }
     const statusBadge = m => m.status === 'actif' ? '<span class="badge ok">Actif</span>' : '<span class="badge">Inactif</span>';
+    const adacBadge = m => notDeclared(m) ? ' <span class="badge warn" title="Pas encore envoyé au tableau des adhérents ADAC cette saison">ADAC à déclarer</span>' : '';
     const tsMode = S.memberFilter === 'tshirt';
+    const adMode = S.memberFilter === 'adac';
+    const adBtn = m => S.settings.adac_url ? `<button class="btn btn-sm btn-primary" data-adac="${m.id}">${icon('up')}Envoyer</button>` : '';
     const abMode = S.memberFilter === 'absents';
     const abInfo = m => { const d = dropouts?.[m.id]; return d ? (d.lastSeen ? `Dernière venue le ${fmtDate(d.lastSeen)}` : 'Pas venu(e) depuis plus de 4 mois') + ` · ${d.missed} séance${d.missed > 1 ? 's' : ''} manquée${d.missed > 1 ? 's' : ''}` : ''; };
     const abBtn = m => { const u = waUrl(renewalPhone(m), dropoutText(m)); return u && renewalPhone(m) ? `<a class="btn btn-sm btn-primary" data-ab href="${esc(u)}" target="_blank" rel="noopener">${icon('chat')}Relancer</a>` : '<span class="small muted">Pas de numéro</span>'; };
     const tsBtn = m => `<button class="btn btn-sm btn-primary" data-ts="${m.id}">${icon('check')}${esc(m.tshirt_size || 'Taille ?')} · Remis</button>`;
     box.innerHTML = `
       ${tsMode ? '<div class="small muted" style="padding:12px 16px 0">Touchez « Remis » quand vous donnez son T-shirt à un membre : il disparaît de cette liste.</div>' : ''}
+      ${adMode ? `<div class="small muted" style="padding:12px 16px 0">Membres actifs pas encore envoyés au tableau des adhérents ADAC ${activeSeason() ? `pour la saison ${esc(activeSeason().label)}` : ''}. ${S.settings.adac_url ? '« Envoyer » les ajoute au tableau (ou complète leurs cases vides s’ils y sont déjà) : ils disparaissent de cette liste.' : 'Installez d’abord la liaison dans Paramètres → ADAC National.'}</div>` : ''}
       ${abMode ? '<div class="small muted" style="padding:12px 16px 0">Membres actifs pas venus depuis au moins 3 semaines, alors que l’appel a été fait à 3 séances ou plus depuis. « Relancer » ouvre WhatsApp avec un message prêt (au responsable légal pour un mineur).</div>' : ''}
-      <div class="table-wrap only-desktop"><table class="table"><thead><tr><th>Nom</th><th>Contact</th><th>Discipline</th><th>Niveau</th><th>Santé</th>${isAdmin() ? '<th>Solde</th>' : ''}<th>Statut</th>${tsMode ? '<th>T-shirt</th>' : ''}${abMode ? '<th>Absence</th>' : ''}</tr></thead><tbody>
+      <div class="table-wrap only-desktop"><table class="table"><thead><tr><th>Nom</th><th>Contact</th><th>Discipline</th><th>Niveau</th><th>Santé</th>${isAdmin() ? '<th>Solde</th>' : ''}<th>Statut</th>${tsMode ? '<th>T-shirt</th>' : ''}${adMode && S.settings.adac_url ? '<th>ADAC</th>' : ''}${abMode ? '<th>Absence</th>' : ''}</tr></thead><tbody>
         ${rows.map(m => `<tr class="clickable" data-id="${m.id}">
           <td><div class="person"><div class="avatar">${esc(initials(m))}</div><div><div class="name">${esc(fullName(m))}</div>${m.birth_date ? `<div class="meta">${ageOf(m.birth_date)} ans</div>` : ''}</div></div></td>
           <td class="small">${esc(m.phone || '')}<div class="muted">${esc(m.email || '')}</div></td>
           <td>${esc(discName(m.discipline_id))}</td><td>${esc(levelName(m.level_id))}</td>
           <td>${healthBadge(m)}</td>
           ${isAdmin() ? `<td>${balance(m) > 0 ? `<span class="badge danger">${fmtMoney(balance(m))}</span>` : '<span class="badge ok">À jour</span>'}</td>` : ''}
-          <td>${statusBadge(m)}</td>${tsMode ? `<td>${tsBtn(m)}</td>` : ''}${abMode ? `<td><div class="small muted mb">${abInfo(m)}</div>${abBtn(m)}</td>` : ''}</tr>`).join('')}
+          <td>${statusBadge(m)}${adacBadge(m)}</td>${tsMode ? `<td>${tsBtn(m)}</td>` : ''}${adMode && S.settings.adac_url ? `<td>${adBtn(m)}</td>` : ''}${abMode ? `<td><div class="small muted mb">${abInfo(m)}</div>${abBtn(m)}</td>` : ''}</tr>`).join('')}
       </tbody></table></div>
       <div class="list only-mobile">${rows.map(m => `<div class="list-item" data-id="${m.id}">
           <div class="avatar">${esc(initials(m))}</div>
           <div class="grow"><div style="font-weight:600">${esc(fullName(m))}</div><div class="small muted">${abMode ? abInfo(m) : `${esc(discName(m.discipline_id))} · ${esc(levelName(m.level_id))}`}</div></div>
-          <div class="right">${abMode ? abBtn(m) : tsMode ? tsBtn(m) : `${m.status !== 'actif' ? statusBadge(m) : (!hasHealthDoc(m) ? healthBadge(m, true) : '')}${isAdmin() && balance(m) > 0 ? `<span class="badge danger">${fmtMoney(balance(m))}</span>` : ''}`}</div>
+          <div class="right">${abMode ? abBtn(m) : tsMode ? tsBtn(m) : adMode ? (adBtn(m) || adacBadge(m)) : `${m.status !== 'actif' ? statusBadge(m) : (!hasHealthDoc(m) ? healthBadge(m, true) : '')}${isAdmin() && balance(m) > 0 ? `<span class="badge danger">${fmtMoney(balance(m))}</span>` : ''}`}</div>
         </div>`).join('')}</div>`;
     $$('[data-id]', box).forEach(r => r.onclick = () => go('/membres/' + r.dataset.id));
     $$('[data-ab]', box).forEach(a => a.addEventListener('click', e => e.stopPropagation()));
+    $$('[data-adac]', box).forEach(b => b.onclick = async e => {
+      e.stopPropagation();
+      const m = members.find(x => x.id === b.dataset.adac);
+      await adacSendMember(m, b);
+      $$('[data-f]', view).forEach(c => { const f = filters.find(x => x.k === c.dataset.f); if (f) $('.n', c).textContent = members.filter(f.fn).length; });
+      draw();
+    });
     $$('[data-ts]', box).forEach(b => b.onclick = async e => {
       e.stopPropagation();
       const m = members.find(x => x.id === b.dataset.ts);
@@ -210,7 +225,7 @@ export function memberForm(m, onSaved, prefill = {}) {
         const toAdac = !m && $('#mf-adac', root)?.checked;
         closeModal(); toast((m ? 'Membre mis à jour' : 'Membre ajouté') + (queued ? ` · ${queued} règlement${queued > 1 ? 's' : ''} enregistré${queued > 1 ? 's' : ''}` : ''));
         onSaved?.(saved.id);
-        if (toAdac) adacSendMember(saved);
+        if (toAdac) adacSendMember(saved).then(x => { if (x && location.hash.includes(saved.id)) route(); });
       };
     },
   });
@@ -351,6 +366,7 @@ export async function viewMember(view, id) {
       </dl></div>
       <div class="card card-pad"><h2>Inscription</h2><dl class="kv">
         <dt>Date d’inscription</dt><dd>${fmtDate(m.registration_date)}</dd><dt>Rôle</dt><dd>${esc(m.member_role || '—')}</dd>
+        ${hasAdacCol(m) ? `<dt>ADAC</dt><dd>${adacDeclared(m) ? `<span class="badge ok">Déclaré le ${fmtDate(m.adac_sent_at)}</span>` : `<span class="badge warn">Pas encore déclaré${activeSeason() ? ' cette saison' : ''}</span>${m.adac_sent_at ? ` <span class="small muted">dernier envoi le ${fmtDate(m.adac_sent_at)}</span>` : ''}`}</dd>` : ''}
         <dt>T-shirt</dt><dd>${esc(m.tshirt_size || '—')}${'tshirt_given_at' in m ? ` · ${m.tshirt_given_at ? `<span class="badge ok">Remis le ${fmtDate(m.tshirt_given_at)}</span>` : '<span class="badge warn">Pas encore remis</span>'} <button class="btn btn-sm" id="ts-toggle" style="margin-left:4px">${m.tshirt_given_at ? 'Annuler' : 'Marquer remis'}</button>` : ''}</dd><dt>Cotisation</dt><dd>${esc(m.fee_type || '—')}${m.fee_amount != null ? ' · ' + fmtMoney(m.fee_amount) : ''}</dd>
         <dt>Connu le club par</dt><dd>${esc(m.how_found || '—')}</dd>
         <dt>Autre sport de défense</dt><dd>${m.other_defense_sport ? 'Oui' + (m.other_defense_sport_details ? ' — ' + esc(m.other_defense_sport_details) : '') : 'Non'}</dd>
@@ -384,7 +400,7 @@ export async function viewMember(view, id) {
   $('#add-grade') && ($('#add-grade').onclick = () => gradeEntryForm(m, null));
   $$('[data-grade]', view).forEach(b => b.onclick = () => gradeEntryForm(m, grades.find(g => g.id === b.dataset.grade)));
   $('#edit').onclick = () => memberForm(m, () => route());
-  $('#adac-one') && ($('#adac-one').onclick = e => adacSendMember(m, e.currentTarget));
+  $('#adac-one') && ($('#adac-one').onclick = async e => { if (await adacSendMember(m, e.currentTarget)) route(); });
   $$('#add-pay, #add-pay-top', view).forEach(b => b.onclick = () => paymentForm(null, { member_id: m.id, amount: due > 0 ? due : m.fee_amount }));
   $('#attest') && ($('#attest').onclick = () => printAttestation(m, seasonPays.filter(p => p.status === 'payé' && !p.archived), season));
   $('#ts-toggle') && ($('#ts-toggle').onclick = async () => {

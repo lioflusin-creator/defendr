@@ -125,7 +125,7 @@ export function bindAutoBackup(view) {
 export const BOOL_COLS = new Set(['trial_present', 'medical_certificate', 'qss', 'medical_waiver', 'other_defense_sport', 'consent_image', 'consent_data', 'rules_read', 'rules_accepted', 'insurance_informed', 'parental_authorization', 'present', 'done', 'bank_checked', 'archived', 'is_active']);
 export const ARRAY_COLS = new Set(['revenue_types', 'expense_categories', 'rooms', 'plan_sections']);
 export const JSON_COLS = new Set(['club_documents', 'health_files']);
-export const DATE_COLS = new Set(['tshirt_given_at', 'stage_date', 'trial_date', 'birth_date', 'registration_date', 'medical_waiver_validity', 'course_date', 'payment_date', 'due_date', 'expense_date', 'changed_on']);
+export const DATE_COLS = new Set(['tshirt_given_at', 'adac_sent_at', 'stage_date', 'trial_date', 'birth_date', 'registration_date', 'medical_waiver_validity', 'course_date', 'payment_date', 'due_date', 'expense_date', 'changed_on']);
 export const TIME_COLS = new Set(['start_time', 'end_time', 'default_start_time', 'default_end_time']);
 export const PHONE_COLS = new Set(['phone', 'emergency_phone', 'guardian_phone', 'whatsapp_number']);
 
