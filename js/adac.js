@@ -31,10 +31,32 @@ export async function adacCall(body) {
   return data;
 }
 
+// Fiche Defendr → données attendues par le script du tableur
+export const adacPayload = m => ({ first_name: m.first_name, last_name: m.last_name, gender: m.gender, birth_date: m.birth_date, address: m.address, email: m.email || m.guardian_email, tshirt_size: m.tshirt_size });
+
 export async function adacMembers() {
   const { data, error } = await sb.from('members').select('first_name, last_name, gender, birth_date, address, email, guardian_email, tshirt_size').eq('status', 'actif').order('last_name');
   if (error) throw error;
-  return data.map(m => ({ first_name: m.first_name, last_name: m.last_name, gender: m.gender, birth_date: m.birth_date, address: m.address, email: m.email || m.guardian_email, tshirt_size: m.tshirt_size }));
+  return data.map(adacPayload);
+}
+
+// Envoi d'un seul membre (création d'une fiche ou bouton de la fiche membre).
+// Mêmes règles que l'envoi groupé : jamais de doublon, seules les cases vides sont complétées.
+export async function adacSendMember(m, btn) {
+  if (btn) btn.disabled = true;
+  try {
+    const r = await adacCall({ members: [adacPayload(m)] });
+    const x = r.results?.[0] || {};
+    const msg = {
+      ajout: `ADAC : ${x.name} ajouté au tableau (${x.detail})`,
+      complete: `ADAC : ${x.name} déjà présent, cases complétées (${x.detail})`,
+      present: `ADAC : ${x.name} est déjà dans le tableau, rien à changer`,
+      ignore: `ADAC : envoi ignoré (${x.detail || 'données incomplètes'})`,
+    }[x.action] || 'ADAC : envoi effectué';
+    toast(msg, x.action === 'ignore' ? 'error' : undefined);
+    return x;
+  } catch (e) { toast('ADAC : ' + e.message, 'error'); return null; }
+  finally { if (btn) btn.disabled = false; }
 }
 
 export function adacList(results, labels, withEmpty = false) {

@@ -1,4 +1,5 @@
 // Defendr — Membres
+import { adacSendMember } from './adac.js';
 import { $, $$, S, activeSeason, ageOf, closeModal, confirmBox, discName, esc, fail, fmtDate, fmtDay, fmtMoney, fullName, icon, initials, isAdmin, isBirthdayMonth, isoDay, levelName, openModal, readForm, sb, toast, waLink } from './core.js';
 import { go, head, route } from './shell.js';
 import { hasHealthDoc, healthBadge, memberIssues, reminderLink } from './dashboard.js';
@@ -185,7 +186,10 @@ export function memberForm(m, onSaved, prefill = {}) {
   </form>`;
   openModal({
     title: m ? 'Modifier le membre' : 'Nouveau membre', body,
-    foot: `<button class="btn" data-close>Annuler</button><button class="btn btn-primary" id="mf-save">Enregistrer</button>`,
+    // Nouveau membre : proposer l'envoi vers le tableau des adhérents ADAC (case hors du formulaire, pour ne pas être enregistrée dans la fiche)
+    foot: `${!m ? (S.settings.adac_url
+        ? '<label class="check" style="margin-right:auto;padding:0"><input type="checkbox" id="mf-adac" checked><span>Envoyer au tableau des adhérents ADAC</span></label>'
+        : (isAdmin() ? '<span class="small muted" style="margin-right:auto">Envoi au tableau ADAC : <a href="#/parametres" data-close>à installer dans Paramètres</a></span>' : '')) : ''}<button class="btn" data-close>Annuler</button><button class="btn btn-primary" id="mf-save">Enregistrer</button>`,
     onMount: root => {
       const fee = $('#mf-fee_type', root), amt = $('#mf-fee_amount', root);
       const pays = isAdmin() ? memberPaymentsBox(m, $('#mf-pays', root), () => amt.value) : null;
@@ -203,8 +207,10 @@ export function memberForm(m, onSaved, prefill = {}) {
         if (error) return fail(error);
         const queued = pays ? await pays.flush(saved.id) : 0;
         if (queued < 0) return;
+        const toAdac = !m && $('#mf-adac', root)?.checked;
         closeModal(); toast((m ? 'Membre mis à jour' : 'Membre ajouté') + (queued ? ` · ${queued} règlement${queued > 1 ? 's' : ''} enregistré${queued > 1 ? 's' : ''}` : ''));
         onSaved?.(saved.id);
+        if (toAdac) adacSendMember(saved);
       };
     },
   });
@@ -316,6 +322,7 @@ export async function viewMember(view, id) {
           ${wa ? `<a class="btn btn-sm" href="${wa}" target="_blank" rel="noopener">${icon('chat')}WhatsApp</a>` : ''}
           ${m.email ? `<a class="btn btn-sm" href="mailto:${esc(m.email)}">${icon('mail')}E-mail</a>` : ''}
           ${isAdmin() ? `<button class="btn btn-sm" id="add-pay-top">${icon('euro')}Enregistrer un règlement</button>` : ''}
+          ${S.settings.adac_url ? `<button class="btn btn-sm" id="adac-one" title="Ajoute ce membre au tableau des adhérents ADAC, ou complète ses cases vides s’il y est déjà">${icon('up')}Envoyer à l’ADAC</button>` : ''}
           <button class="btn btn-sm btn-primary" id="edit">${icon('edit')}Modifier</button>
         </div>
       </div>
@@ -377,6 +384,7 @@ export async function viewMember(view, id) {
   $('#add-grade') && ($('#add-grade').onclick = () => gradeEntryForm(m, null));
   $$('[data-grade]', view).forEach(b => b.onclick = () => gradeEntryForm(m, grades.find(g => g.id === b.dataset.grade)));
   $('#edit').onclick = () => memberForm(m, () => route());
+  $('#adac-one') && ($('#adac-one').onclick = e => adacSendMember(m, e.currentTarget));
   $$('#add-pay, #add-pay-top', view).forEach(b => b.onclick = () => paymentForm(null, { member_id: m.id, amount: due > 0 ? due : m.fee_amount }));
   $('#attest') && ($('#attest').onclick = () => printAttestation(m, seasonPays.filter(p => p.status === 'payé' && !p.archived), season));
   $('#ts-toggle') && ($('#ts-toggle').onclick = async () => {
